@@ -430,6 +430,7 @@ export default function App() {
               customCategories={customCategories}
               onBatchImport={handleBatchImport}
               creditCards={creditCards}
+              existingTransactions={transactions}
             />
           )}
 

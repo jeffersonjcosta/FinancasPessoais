@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertTriangle, CheckCircle2, ShieldAlert, PlusCircle, Coffee, ShoppingBag, Car, Utensils, CreditCard, Landmark, BellRing } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ShieldAlert, PlusCircle, Coffee, ShoppingBag, Car, Utensils, Coins, BellRing } from 'lucide-react';
 
 export default function Dashboard({
   profile,
@@ -31,6 +31,13 @@ export default function Dashboard({
     return d.getFullYear() === year && d.getMonth() === month;
   });
 
+  // ZBB Calculation: Pronto para Atribuir
+  const availableCash = Number(profile?.available_cash) || Number(profile?.monthly_income) || 0;
+  const totalAllocated = customCategories.reduce((acc, cat) => acc + (Number(cat.budget_limit) || 0), 0)
+    + Number(profile?.limit_essentials || 0) + Number(profile?.limit_lifestyle || 0) + Number(profile?.limit_savings || 0);
+
+  const readyToAssign = availableCash - totalAllocated;
+
   // Macro categories spend calculations
   const spentEssentials = currentMonthTxs
     .filter(t => t.type === 'expense' && t.category === 'essentials')
@@ -42,6 +49,10 @@ export default function Dashboard({
 
   const spentSavings = currentMonthTxs
     .filter(t => t.type === 'expense' && t.category === 'savings')
+    .reduce((sum, t) => sum + Number(t.amount), 0);
+
+  const spentDebts = currentMonthTxs
+    .filter(t => t.type === 'expense' && t.category === 'debts')
     .reduce((sum, t) => sum + Number(t.amount), 0);
 
   const limitLifestyle = Number(profile?.limit_lifestyle || 2500);
@@ -147,6 +158,24 @@ export default function Dashboard({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* ZBB Quick Header Bar */}
+      <div className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.8))', padding: '0.85rem 1.25rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <Coins size={22} style={{ color: readyToAssign === 0 ? '#34d399' : '#60a5fa' }} />
+          <div>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Saldo ZBB "Pronto para Atribuir"</span>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: readyToAssign < 0 ? '#f87171' : readyToAssign === 0 ? '#34d399' : '#60a5fa' }}>
+              R$ {readyToAssign.toFixed(2)}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+          <div>Liquidez em Conta: <strong>R$ {availableCash.toFixed(2)}</strong></div>
+          <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>Alocado no Orçamento: R$ {totalAllocated.toFixed(2)}</div>
+        </div>
+      </div>
+
       {/* Desktop Grid Layout (2 columns) */}
       <div className="dashboard-grid">
         
@@ -260,7 +289,14 @@ export default function Dashboard({
                   className={`pill-btn ${category === 'savings' ? 'active savings' : ''}`}
                   onClick={() => setCategory('savings')}
                 >
-                  Futuro / Poupança
+                  Reservas
+                </button>
+                <button
+                  type="button"
+                  className={`pill-btn ${category === 'debts' ? 'active debts' : ''}`}
+                  onClick={() => setCategory('debts')}
+                >
+                  Dívidas
                 </button>
               </div>
 
@@ -376,10 +412,10 @@ export default function Dashboard({
               </div>
             </div>
 
-            {/* Futuro */}
+            {/* Reservas */}
             <div>
               <div className="progress-header">
-                <span>Futuro & Investimentos</span>
+                <span>Reservas & Futuro</span>
                 <span>R$ {spentSavings.toFixed(2)} / R$ {Number(profile?.limit_savings || 1000).toFixed(2)}</span>
               </div>
               <div className="progress-bar-bg" style={{ marginTop: '0.35rem' }}>
@@ -389,9 +425,23 @@ export default function Dashboard({
                 ></div>
               </div>
             </div>
+
+            {/* Servico de Dividas */}
+            {spentDebts > 0 && (
+              <div>
+                <div className="progress-header">
+                  <span>Serviço de Dívidas & Amortização</span>
+                  <span>R$ {spentDebts.toFixed(2)}</span>
+                </div>
+                <div className="progress-bar-bg" style={{ marginTop: '0.35rem' }}>
+                  <div className="progress-bar-fill lifestyle" style={{ width: '100%', background: '#f59e0b' }}></div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
+

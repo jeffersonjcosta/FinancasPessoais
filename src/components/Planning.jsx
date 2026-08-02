@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Sparkles, Repeat, Plus, Trash2 } from 'lucide-react';
+import { Save, Repeat, Plus, Trash2, CheckCircle2, AlertCircle, Coins } from 'lucide-react';
 import CategoryManager from './CategoryManager';
 
 export default function Planning({
@@ -13,6 +13,7 @@ export default function Planning({
   onDeleteCategory
 }) {
   const [income, setIncome] = useState('');
+  const [availableCash, setAvailableCash] = useState('');
   const [essentials, setEssentials] = useState('');
   const [lifestyle, setLifestyle] = useState('');
   const [savings, setSavings] = useState('');
@@ -28,26 +29,26 @@ export default function Planning({
   useEffect(() => {
     if (profile) {
       setIncome(profile.monthly_income || '');
+      setAvailableCash(profile.available_cash || profile.monthly_income || '');
       setEssentials(profile.limit_essentials || '');
       setLifestyle(profile.limit_lifestyle || '');
       setSavings(profile.limit_savings || '');
     }
   }, [profile]);
 
-  const apply503020Rule = () => {
-    const inc = Number(income);
-    if (inc > 0) {
-      setEssentials((inc * 0.5).toFixed(2));
-      setLifestyle((inc * 0.3).toFixed(2));
-      setSavings((inc * 0.2).toFixed(2));
-    }
-  };
+  // ZBB Calculation: Pronto para Atribuir = Available Cash - Sum of Custom Category Budgets
+  const totalAllocated = customCategories.reduce((acc, cat) => acc + (Number(cat.budget_limit) || 0), 0)
+    + (Number(essentials) || 0) + (Number(lifestyle) || 0) + (Number(savings) || 0);
+
+  const cashValue = Number(availableCash) || Number(income) || 0;
+  const readyToAssign = cashValue - totalAllocated;
 
   const handleSubmitProfile = async (e) => {
     e.preventDefault();
     setSaving(true);
     await onSaveProfile({
       monthly_income: Number(income) || 0,
+      available_cash: Number(availableCash) || 0,
       limit_essentials: Number(essentials) || 0,
       limit_lifestyle: Number(lifestyle) || 0,
       limit_savings: Number(savings) || 0,
@@ -74,29 +75,44 @@ export default function Planning({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      {/* ZBB Indicator Card */}
+      <div className="glass-card" style={{
+        background: readyToAssign === 0
+          ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.05))'
+          : readyToAssign > 0
+          ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(37, 99, 235, 0.05))'
+          : 'linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(220, 38, 38, 0.05))',
+        border: readyToAssign === 0
+          ? '1px solid rgba(16, 185, 129, 0.4)'
+          : readyToAssign > 0
+          ? '1px solid rgba(59, 130, 246, 0.4)'
+          : '1px solid rgba(239, 68, 68, 0.4)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Coins size={16} /> Motor ZBB (Orçamentação Base Zero)
+            </div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '0.2rem', color: readyToAssign < 0 ? '#f87171' : readyToAssign === 0 ? '#34d399' : '#60a5fa' }}>
+              R$ {readyToAssign.toFixed(2)}
+            </div>
+            <div style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+              {readyToAssign === 0 && 'Perfeito! Todo o seu dinheiro recebeu uma função (ZBB atingido).'}
+              {readyToAssign > 0 && 'Você possui liquidez não atribuída. Aloque o saldo restante em categorias ou reservas.'}
+              {readyToAssign < 0 && 'Alerta de sobrealocação! Você alocou mais dinheiro do que o disponível em conta.'}
+            </div>
+          </div>
+
+          <div style={{ padding: '0.8rem', borderRadius: '50%', background: 'rgba(255, 255, 255, 0.05)' }}>
+            {readyToAssign === 0 ? <CheckCircle2 size={32} color="#34d399" /> : <AlertCircle size={32} color={readyToAssign < 0 ? "#f87171" : "#60a5fa"} />}
+          </div>
+        </div>
+      </div>
+
       {/* Monthly Budget Setup */}
       <div className="glass-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.1rem', fontWeight: 600 }}>Planejar Limites do Mês</h2>
-          <button
-            type="button"
-            onClick={apply503020Rule}
-            style={{
-              background: 'rgba(139, 92, 246, 0.15)',
-              border: '1px solid rgba(139, 92, 246, 0.3)',
-              color: '#c4b5fd',
-              borderRadius: '8px',
-              padding: '0.35rem 0.6rem',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.3rem'
-            }}
-          >
-            <Sparkles size={14} /> Sugerir 50/30/20
-          </button>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.1rem', fontWeight: 600 }}>Liquidez & Orçamento ZBB</h2>
         </div>
 
         {savedMsg && (
@@ -106,45 +122,58 @@ export default function Planning({
         )}
 
         <form onSubmit={handleSubmitProfile} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-          <div>
-            <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Renda Mensal Prevista (R$)</label>
-            <input
-              type="number"
-              step="0.01"
-              className="input-glass"
-              placeholder="Ex: 5000.00"
-              value={income}
-              onChange={(e) => setIncome(e.target.value)}
-            />
-          </div>
-
-          <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+          <div className="quick-inputs">
             <div>
-              <label style={{ fontSize: '0.8rem', color: '#93c5fd', display: 'block', marginBottom: '0.3rem' }}>Limite Essenciais (50% Recomendado)</label>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Saldo Disponível em Conta (R$)</label>
               <input
                 type="number"
                 step="0.01"
                 className="input-glass"
-                placeholder="Ex: 2500.00"
+                placeholder="Ex: 10000.00"
+                value={availableCash}
+                onChange={(e) => setAvailableCash(e.target.value)}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Renda Mensal Prevista (R$)</label>
+              <input
+                type="number"
+                step="0.01"
+                className="input-glass"
+                placeholder="Ex: 17922.56"
+                value={income}
+                onChange={(e) => setIncome(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div>
+              <label style={{ fontSize: '0.8rem', color: '#93c5fd', display: 'block', marginBottom: '0.3rem' }}>Alocação Habitação & Essenciais (R$)</label>
+              <input
+                type="number"
+                step="0.01"
+                className="input-glass"
+                placeholder="Ex: 8500.00"
                 value={essentials}
                 onChange={(e) => setEssentials(e.target.value)}
               />
             </div>
 
             <div>
-              <label style={{ fontSize: '0.8rem', color: '#fde68a', display: 'block', marginBottom: '0.3rem' }}>Limite Estilo de Vida - Categoria do Semáforo (30% Recomendado)</label>
+              <label style={{ fontSize: '0.8rem', color: '#fde68a', display: 'block', marginBottom: '0.3rem' }}>Alocação Estilo de Vida & Lazer (R$)</label>
               <input
                 type="number"
                 step="0.01"
                 className="input-glass"
-                placeholder="Ex: 1500.00"
+                placeholder="Ex: 2500.00"
                 value={lifestyle}
                 onChange={(e) => setLifestyle(e.target.value)}
               />
             </div>
 
             <div>
-              <label style={{ fontSize: '0.8rem', color: '#a7f3d0', display: 'block', marginBottom: '0.3rem' }}>Meta de Poupança / Futuro (20% Recomendado)</label>
+              <label style={{ fontSize: '0.8rem', color: '#a7f3d0', display: 'block', marginBottom: '0.3rem' }}>Alocação Reservas & Futuro (R$)</label>
               <input
                 type="number"
                 step="0.01"
@@ -157,10 +186,11 @@ export default function Planning({
           </div>
 
           <button type="submit" className="btn-primary" disabled={saving} style={{ marginTop: '0.5rem' }}>
-            <Save size={18} /> {saving ? 'Salvando...' : 'Salvar Planejamento'}
+            <Save size={18} /> {saving ? 'Salvando...' : 'Salvar Planejamento ZBB'}
           </button>
         </form>
       </div>
+
 
       {/* Custom Category Manager */}
       <CategoryManager

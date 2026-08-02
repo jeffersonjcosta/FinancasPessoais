@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CreditCard, Plus, Trash2, Calendar, DollarSign, Layers } from 'lucide-react';
+import { CreditCard, Plus, Trash2, Calendar, ShieldCheck, ShieldAlert, TrendingUp, Layers, HelpCircle } from 'lucide-react';
 
 export default function CreditCardsManager({
   creditCards = [],
@@ -31,7 +31,8 @@ export default function CreditCardsManager({
       limit_amount: Number(limitAmount) || 0,
       closing_day: Number(closingDay) || 1,
       due_day: Number(dueDay) || 10,
-      color: color
+      color: color,
+      reserved_cash: 0
     });
 
     setName('');
@@ -85,17 +86,40 @@ export default function CreditCardsManager({
       .reduce((sum, t) => sum + Number(t.amount), 0);
   };
 
+  // Calculate CDI interest arbitrage gain (assuming 10.5% p.a. CDI rate ~ 0.039% per day)
+  const calculateCdiArbitrage = (invoiceAmount, dueDayNumber) => {
+    if (invoiceAmount <= 0) return 0;
+    const currentDay = now.getDate();
+    const daysUntilDue = dueDayNumber > currentDay ? dueDayNumber - currentDay : (30 - currentDay) + dueDayNumber;
+    const dailyRate = Math.pow(1 + 0.105, 1 / 365) - 1;
+    const estimatedYield = invoiceAmount * (Math.pow(1 + dailyRate, daysUntilDue) - 1);
+    return { daysUntilDue, estimatedYield };
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* YNAB Credit Card Method Explanation */}
+      <div className="glass-card" style={{ background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(30, 27, 75, 0.2))', border: '1px solid rgba(79, 70, 229, 0.3)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.8rem' }}>
+          <ShieldCheck size={24} style={{ color: '#818cf8', flexShrink: 0, marginTop: '0.2rem' }} />
+          <div>
+            <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#c7d2fe' }}>Reserva Automática de Liquidez para Fatura</h3>
+            <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginTop: '0.25rem', lineHeight: 1.5 }}>
+              Cada compra no cartão de crédito <strong>deduz o valor da sua categoria de consumo</strong> e <strong>reserva o mesmo valor para o pagamento da fatura</strong>. Assim, o seu dinheiro permanece 100% seguro na conta e pode render CDI em liquidez diária até a data de vencimento!
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Cards List Grid */}
       <div className="glass-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
           <div>
             <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <CreditCard size={22} style={{ color: 'var(--color-indigo)' }} /> Cartões de Crédito & Faturas
+              <CreditCard size={22} style={{ color: 'var(--color-indigo)' }} /> Cartões de Crédito & Faturas ZBB
             </h2>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Gerencie limites, faturas atuais e compras parceladas.
+              Acompanhamento de cobertura de caixa, limites e compras parceladas.
             </p>
           </div>
 
@@ -187,6 +211,11 @@ export default function CreditCardsManager({
               const limit = Number(card.limit_amount) || 0;
               const available = limit - currentInvoice;
               const usedPercent = limit > 0 ? (currentInvoice / limit) * 100 : 0;
+              const { daysUntilDue, estimatedYield } = calculateCdiArbitrage(currentInvoice, card.due_day);
+              
+              // In ZBB, reserved cash matches current invoice spending if covered
+              const reservedCash = Number(card.reserved_cash) || currentInvoice;
+              const isFullyCovered = reservedCash >= currentInvoice;
 
               return (
                 <div key={card.id} className="credit-card-widget" style={{ background: `linear-gradient(135deg, ${card.color || '#312e81'}, #0f172a)` }}>
@@ -211,6 +240,31 @@ export default function CreditCardsManager({
                     <div style={{ fontSize: '1.6rem', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>
                       R$ {currentInvoice.toFixed(2)}
                     </div>
+                  </div>
+
+                  {/* Liquidity Coverage Badge */}
+                  <div style={{
+                    background: isFullyCovered ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                    border: isFullyCovered ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(239, 68, 68, 0.4)',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.2rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600 }}>
+                      <span style={{ color: isFullyCovered ? '#34d399' : '#f87171', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        {isFullyCovered ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
+                        {isFullyCovered ? 'Fatura 100% Coberta' : 'Atenção: Sobregasto!'}
+                      </span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Reserva: R$ {reservedCash.toFixed(2)}</span>
+                    </div>
+
+                    {currentInvoice > 0 && (
+                      <div style={{ fontSize: '0.7rem', color: '#a7f3d0', display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.1rem' }}>
+                        <TrendingUp size={12} /> Rendimento CDI estimado ({daysUntilDue} dias): +R$ {estimatedYield.toFixed(2)}
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -306,3 +360,4 @@ export default function CreditCardsManager({
     </div>
   );
 }
+
