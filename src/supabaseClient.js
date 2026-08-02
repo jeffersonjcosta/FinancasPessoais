@@ -6,9 +6,9 @@ const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const localUrl = localStorage.getItem('CUSTOM_SUPABASE_URL');
 const localKey = localStorage.getItem('CUSTOM_SUPABASE_ANON_KEY');
 
-// Chaves do projeto Supabase do usuário (vfzdezjgpqmcuhwcrlhi)
-const defaultUrl = 'https://vfzdezjgpqmcuhwcrlhi.supabase.co';
-const defaultKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZmemRlempncHFtY3Vod2NybGhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4NDU0MjMsImV4cCI6MjEwMDQyMTQyM30.4vhJvjAt7QOEU1Q8jLfbHDVsTqI1PY8QJGAgM0lS5Aw';
+// Chaves do projeto Supabase ativo do usuário (dzgclwwdyqgyenzkwsdb)
+const defaultUrl = 'https://dzgclwwdyqgyenzkwsdb.supabase.co';
+const defaultKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR6Z2Nsd3dkeXFneWVuemt3c2RiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2MDYyMzQsImV4cCI6MjEwMTE4MjIzNH0.YkvrQUQfREjShhN14tIv0HF3Uq4UbX7Sn-5rfdooeps';
 
 const supabaseUrl = envUrl || localUrl || defaultUrl;
 const supabaseAnonKey = envKey || localKey || defaultKey;
