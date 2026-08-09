@@ -3,23 +3,26 @@ import { supabase, isSupabaseConfigured } from './supabaseClient';
 import Auth from './components/Auth';
 import Navbar from './components/Navbar';
 import Dashboard from './components/Dashboard';
-import Transactions from './components/Transactions';
-import CreditCardsManager from './components/CreditCardsManager';
-import FileImporter from './components/FileImporter';
-import DebtsManager from './components/DebtsManager';
-import Planning from './components/Planning';
-import Settings from './components/Settings';
+import IncomesManager from './components/IncomesManager';
+import ExpensesManager from './components/ExpensesManager';
+import AccountsManager from './components/AccountsManager';
+import CategoryManager from './components/CategoryManager';
+import {
+  INITIAL_ACCOUNTS,
+  INITIAL_CATEGORIES,
+  INITIAL_INCOMES,
+  INITIAL_EXPENSES
+} from './data/initialData';
 import {
   ShieldCheck,
   Calendar,
   LayoutDashboard,
-  Receipt,
-  CreditCard,
-  UploadCloud,
+  TrendingUp,
+  TrendingDown,
   Landmark,
-  SlidersHorizontal,
+  Tag,
   LogOut,
-  Settings as SettingsIcon
+  RotateCcw
 } from 'lucide-react';
 import './App.css';
 
@@ -27,64 +30,50 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [selectedMonth, setSelectedMonth] = useState('2026-05');
 
-  const [profile, setProfile] = useState({
-    monthly_income: 17922.56,
-    limit_essentials: 8500,
-    limit_lifestyle: 2500,
-    limit_savings: 1000,
+  // Accounts state
+  const [accounts, setAccounts] = useState(() => {
+    const saved = localStorage.getItem('FIN_ACCOUNTS');
+    return saved ? JSON.parse(saved) : INITIAL_ACCOUNTS;
   });
 
-  const [transactions, setTransactions] = useState(() => {
-    const saved = localStorage.getItem('APP_TRANSACTIONS');
-    return saved ? JSON.parse(saved) : [];
+  // Categories state
+  const [categories, setCategories] = useState(() => {
+    const saved = localStorage.getItem('FIN_CATEGORIES');
+    return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
   });
 
-  const [creditCards, setCreditCards] = useState(() => {
-    const saved = localStorage.getItem('APP_CREDIT_CARDS');
-    return saved ? JSON.parse(saved) : [
-      { id: 'card-credicard', name: 'Credicard', limit_amount: 5000, closing_day: 15, due_day: 24, color: '#4f46e5' },
-      { id: 'card-bradesco', name: 'Bradesco', limit_amount: 8000, closing_day: 15, due_day: 24, color: '#dc2626' }
-    ];
+  // Incomes state
+  const [incomes, setIncomes] = useState(() => {
+    const saved = localStorage.getItem('FIN_INCOMES');
+    return saved ? JSON.parse(saved) : INITIAL_INCOMES;
   });
 
-  const [debts, setDebts] = useState(() => {
-    const saved = localStorage.getItem('APP_DEBTS');
-    return saved ? JSON.parse(saved) : [
-      { id: 'debt-suelena', creditor_name: 'Suelena', total_amount: 14000, remaining_amount: 12000, monthly_payment: 1000, notes: 'Empréstimo Familiar (R$ 1.000/mês)' }
-    ];
+  // Expenses state
+  const [expenses, setExpenses] = useState(() => {
+    const saved = localStorage.getItem('FIN_EXPENSES');
+    return saved ? JSON.parse(saved) : INITIAL_EXPENSES;
   });
 
-  const [customCategories, setCustomCategories] = useState(() => {
-    const saved = localStorage.getItem('APP_CUSTOM_CATEGORIES');
-    return saved ? JSON.parse(saved) : [
-      { id: 'cat-mercado', name: 'Alimentação / Mercado', macro_category: 'essentials', budget_limit: 2500 },
-      { id: 'cat-gasolina', name: 'Transporte / Gasolina', macro_category: 'essentials', budget_limit: 600 },
-      { id: 'cat-lazer', name: 'Lazer & Lanches', macro_category: 'lifestyle', budget_limit: 400 },
-      { id: 'cat-outros', name: 'Outros Flexíveis', macro_category: 'lifestyle', budget_limit: 500 }
-    ];
-  });
-
-  const [recurring, setRecurring] = useState([]);
-
-  // Save state to localStorage as fallback
+  // LocalStorage Persist
   useEffect(() => {
-    localStorage.setItem('APP_TRANSACTIONS', JSON.stringify(transactions));
-  }, [transactions]);
+    localStorage.setItem('FIN_ACCOUNTS', JSON.stringify(accounts));
+  }, [accounts]);
 
   useEffect(() => {
-    localStorage.setItem('APP_CREDIT_CARDS', JSON.stringify(creditCards));
-  }, [creditCards]);
+    localStorage.setItem('FIN_CATEGORIES', JSON.stringify(categories));
+  }, [categories]);
 
   useEffect(() => {
-    localStorage.setItem('APP_DEBTS', JSON.stringify(debts));
-  }, [debts]);
+    localStorage.setItem('FIN_INCOMES', JSON.stringify(incomes));
+  }, [incomes]);
 
   useEffect(() => {
-    localStorage.setItem('APP_CUSTOM_CATEGORIES', JSON.stringify(customCategories));
-  }, [customCategories]);
+    localStorage.setItem('FIN_EXPENSES', JSON.stringify(expenses));
+  }, [expenses]);
 
-  // Check Auth State
+  // Auth State
   useEffect(() => {
     if (!isSupabaseConfigured()) {
       setLoadingAuth(false);
@@ -104,201 +93,73 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch Data when user is logged in
-  useEffect(() => {
-    if (user) {
-      fetchUserData();
-    }
-  }, [user]);
-
-  const fetchUserData = async () => {
-    try {
-      // 1. Profile
-      const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
-      if (profData) setProfile(profData);
-
-      // 2. Transactions
-      const { data: txData } = await supabase.from('transactions').select('*').order('date', { ascending: false });
-      if (txData && txData.length > 0) setTransactions(txData);
-
-      // 3. Credit Cards
-      const { data: cardData } = await supabase.from('credit_cards').select('*');
-      if (cardData && cardData.length > 0) setCreditCards(cardData);
-
-      // 4. Debts
-      const { data: debtData } = await supabase.from('debts').select('*');
-      if (debtData && debtData.length > 0) setDebts(debtData);
-
-      // 5. Categories
-      const { data: catData } = await supabase.from('categories').select('*');
-      if (catData && catData.length > 0) setCustomCategories(catData);
-
-      // 6. Recurring
-      const { data: recData } = await supabase.from('recurring_expenses').select('*');
-      if (recData) setRecurring(recData);
-
-    } catch (err) {
-      console.error('Erro ao buscar dados do Supabase:', err);
-    }
+  // Handlers for Incomes
+  const handleAddIncome = (newInc) => {
+    const item = { ...newInc, id: 'inc-' + Date.now() };
+    setIncomes(prev => [item, ...prev]);
   };
 
-  // Add Transaction
-  const handleAddTransaction = async (newTx) => {
-    const txObj = {
-      ...newTx,
-      id: newTx.id || 'tx-' + Date.now() + Math.random().toString(36).substr(2, 4),
-      user_id: user?.id || 'demo-user',
-    };
-
-    setTransactions(prev => [txObj, ...prev]);
-
-    if (user && isSupabaseConfigured()) {
-      try {
-        await supabase.from('transactions').insert([txObj]);
-      } catch (err) {
-        console.error('Erro ao inserir transação no Supabase:', err);
-      }
-    }
+  const handleUpdateIncome = (id, updatedFields) => {
+    setIncomes(prev => prev.map(i => i.id === id ? { ...i, ...updatedFields } : i));
   };
 
-  // Batch Import Transactions
-  const handleBatchImport = async (txList) => {
-    for (const tx of txList) {
-      await handleAddTransaction(tx);
-    }
+  const handleDeleteIncome = (id) => {
+    setIncomes(prev => prev.filter(i => i.id !== id));
   };
 
-  // Update Transaction
-  const handleUpdateTransaction = async (id, updatedFields) => {
-    setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updatedFields } : t));
-    if (user && isSupabaseConfigured()) {
-      try {
-        await supabase.from('transactions').update(updatedFields).eq('id', id);
-      } catch (err) {
-        console.error('Erro ao atualizar transação no Supabase:', err);
-      }
-    }
+  // Handlers for Expenses
+  const handleAddExpense = (newExp) => {
+    const item = { ...newExp, id: 'exp-' + Date.now() };
+    setExpenses(prev => [item, ...prev]);
   };
 
-  // Delete Transaction
-  const handleDeleteTransaction = async (id) => {
-    setTransactions(prev => prev.filter(t => t.id !== id));
-    if (user && isSupabaseConfigured()) {
-      try {
-        await supabase.from('transactions').delete().eq('id', id);
-      } catch (err) {
-        console.error('Erro ao deletar transação no Supabase:', err);
-      }
-    }
+  const handleUpdateExpense = (id, updatedFields) => {
+    setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...updatedFields } : e));
   };
 
-  // Credit Card Handlers
-  const handleAddCard = async (newCard) => {
-    const cardObj = {
-      ...newCard,
-      id: 'card-' + Date.now(),
-      user_id: user?.id || 'demo-user'
-    };
-    setCreditCards(prev => [...prev, cardObj]);
-
-    if (user && isSupabaseConfigured()) {
-      try {
-        await supabase.from('credit_cards').insert([cardObj]);
-      } catch (err) {
-        console.error('Erro ao inserir cartão:', err);
-      }
-    }
+  const handleDeleteExpense = (id) => {
+    setExpenses(prev => prev.filter(e => e.id !== id));
   };
 
-  const handleDeleteCard = async (id) => {
-    setCreditCards(prev => prev.filter(c => c.id !== id));
-    if (user && isSupabaseConfigured()) {
-      try {
-        await supabase.from('credit_cards').delete().eq('id', id);
-      } catch (err) {
-        console.error('Erro ao deletar cartão:', err);
-      }
-    }
+  // Handlers for Accounts
+  const handleAddAccount = (newAcc) => {
+    const item = { ...newAcc, id: 'acc-' + Date.now() };
+    setAccounts(prev => [...prev, item]);
   };
 
-  // Debts Handlers
-  const handleAddDebt = async (newDebt) => {
-    const debtObj = {
-      ...newDebt,
-      id: 'debt-' + Date.now(),
-      user_id: user?.id || 'demo-user'
-    };
-    setDebts(prev => [...prev, debtObj]);
-
-    if (user && isSupabaseConfigured()) {
-      try {
-        await supabase.from('debts').insert([debtObj]);
-      } catch (err) {
-        console.error('Erro ao inserir dívida:', err);
-      }
-    }
+  const handleUpdateAccount = (id, updatedFields) => {
+    setAccounts(prev => prev.map(a => a.id === id ? { ...a, ...updatedFields } : a));
   };
 
-  const handleUpdateDebt = async (id, updatedFields) => {
-    setDebts(prev => prev.map(d => d.id === id ? { ...d, ...updatedFields } : d));
-    if (user && isSupabaseConfigured()) {
-      try {
-        await supabase.from('debts').update(updatedFields).eq('id', id);
-      } catch (err) {
-        console.error('Erro ao atualizar dívida:', err);
-      }
-    }
+  const handleDeleteAccount = (id) => {
+    setAccounts(prev => prev.filter(a => a.id !== id));
   };
 
-  const handleDeleteDebt = async (id) => {
-    setDebts(prev => prev.filter(d => d.id !== id));
-    if (user && isSupabaseConfigured()) {
-      try {
-        await supabase.from('debts').delete().eq('id', id);
-      } catch (err) {
-        console.error('Erro ao deletar dívida:', err);
-      }
-    }
+  // Handlers for Categories
+  const handleAddCategory = (newCat) => {
+    const item = { ...newCat, id: 'cat-' + Date.now() };
+    setCategories(prev => [...prev, item]);
   };
 
-  // Profile Save
-  const handleSaveProfile = async (updatedProfile) => {
-    setProfile(prev => ({ ...prev, ...updatedProfile }));
-    if (user && isSupabaseConfigured()) {
-      try {
-        await supabase.from('profiles').update(updatedProfile).eq('id', user.id);
-      } catch (err) {
-        console.error('Erro ao salvar perfil:', err);
-      }
-    }
+  const handleUpdateCategory = (id, updatedFields) => {
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updatedFields } : c));
   };
 
-  // Category Handlers
-  const handleAddCategory = async (newCat) => {
-    const catObj = {
-      ...newCat,
-      id: 'cat-' + Date.now(),
-      user_id: user?.id || 'demo-user'
-    };
-    setCustomCategories(prev => [...prev, catObj]);
-
-    if (user && isSupabaseConfigured()) {
-      try {
-        await supabase.from('categories').insert([catObj]);
-      } catch (err) {
-        console.error('Erro ao adicionar categoria:', err);
-      }
-    }
+  const handleDeleteCategory = (id) => {
+    setCategories(prev => prev.filter(c => c.id !== id));
   };
 
-  const handleDeleteCategory = async (id) => {
-    setCustomCategories(prev => prev.filter(c => c.id !== id));
-    if (user && isSupabaseConfigured()) {
-      try {
-        await supabase.from('categories').delete().eq('id', id);
-      } catch (err) {
-        console.error('Erro ao deletar categoria:', err);
-      }
+  // Reset to initial spreadsheet data
+  const handleResetData = () => {
+    if (window.confirm('Deseja restaurar os dados originais da planilha FINANCEIRO 2026? Suas alterações locais serão sobrescritas.')) {
+      setAccounts(INITIAL_ACCOUNTS);
+      setCategories(INITIAL_CATEGORIES);
+      setIncomes(INITIAL_INCOMES);
+      setExpenses(INITIAL_EXPENSES);
+      localStorage.removeItem('FIN_ACCOUNTS');
+      localStorage.removeItem('FIN_CATEGORIES');
+      localStorage.removeItem('FIN_INCOMES');
+      localStorage.removeItem('FIN_EXPENSES');
     }
   };
 
@@ -311,43 +172,40 @@ export default function App() {
 
   if (loadingAuth) {
     return (
-      <div className="auth-container" style={{ textAlign: 'center', alignItems: 'center' }}>
-        <div className="app-logo-icon" style={{ animation: 'spin 1s linear infinite' }}>
-          <ShieldCheck size={26} />
+      <div className="loading-screen">
+        <div className="app-logo-icon spinner">
+          <ShieldCheck size={32} />
         </div>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Carregando Semáforo Fin Responsivo...</p>
+        <p>Carregando Gestão Financeira...</p>
       </div>
     );
   }
 
-  // If Supabase configured and user not logged in
   if (isSupabaseConfigured() && !user) {
     return <Auth onLoginSuccess={(u) => setUser(u)} />;
   }
 
-  const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-  const currentMonthName = monthNames[new Date().getMonth()];
-
   const navMenuItems = [
-    { id: 'dashboard', label: 'Dashboard Semáforo', icon: LayoutDashboard },
-    { id: 'transactions', label: 'Extrato de Transações', icon: Receipt },
-    { id: 'cards', label: 'Cartões & Faturas', icon: CreditCard },
-    { id: 'importer', label: 'Importar Extrato (OFX)', icon: UploadCloud },
-    { id: 'debts', label: 'Empréstimos & Dívidas', icon: Landmark },
-    { id: 'planning', label: 'Planejar Limites', icon: SlidersHorizontal },
-    { id: 'settings', label: 'Configurações', icon: SettingsIcon },
+    { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
+    { id: 'receitas', label: 'Receitas', icon: TrendingUp },
+    { id: 'despesas', label: 'Despesas', icon: TrendingDown },
+    { id: 'contas', label: 'Contas', icon: Landmark },
+    { id: 'categorias', label: 'Categorias', icon: Tag },
   ];
 
   return (
     <div className="app-container">
-      {/* Desktop Left Sidebar */}
+      {/* Desktop Navigation Sidebar */}
       <aside className="desktop-sidebar">
         <div>
           <div className="sidebar-logo">
             <div className="app-logo-icon">
-              <ShieldCheck size={22} />
+              <ShieldCheck size={24} />
             </div>
-            <span className="app-title">SemáforoFin</span>
+            <div className="sidebar-brand">
+              <span className="app-title">Financeiro 2026</span>
+              <span className="app-subtitle">Gestão Pessoal Simples</span>
+            </div>
           </div>
 
           <nav className="sidebar-nav">
@@ -368,103 +226,91 @@ export default function App() {
           </nav>
         </div>
 
-        {user && (
-          <button
-            className="sidebar-item"
-            onClick={handleLogout}
-            style={{ color: '#f87171', borderTop: '1px solid var(--card-border)', paddingTop: '1rem' }}
-          >
-            <LogOut size={18} />
-            <span>Sair do Sistema</span>
+        <div className="sidebar-footer">
+          <button className="sidebar-item btn-reset" onClick={handleResetData} title="Restaurar dados da Planilha">
+            <RotateCcw size={16} />
+            <span>Restaurar Planilha</span>
           </button>
-        )}
+
+          {user && (
+            <button className="sidebar-item btn-logout" onClick={handleLogout}>
+              <LogOut size={16} />
+              <span>Sair</span>
+            </button>
+          )}
+        </div>
       </aside>
 
-      {/* Main Wrapper */}
+      {/* Main Content Area */}
       <div className="main-wrapper">
         <header className="app-header">
           <div className="header-title-area">
-            <h1>Gestão Financeira Familiar</h1>
-            <p>Sistema Web Responsivo integrado ao Supabase</p>
+            <h1>Controle Financeiro Familiar</h1>
+            <p>Planilha Integrada • Contas, Receitas, Despesas & Limites</p>
           </div>
 
-          <div className="user-badge">
+          <div className="header-month-badge">
             <Calendar size={15} />
-            <span>{currentMonthName} / {new Date().getFullYear()}</span>
+            <span>Mês selecionado: <strong>{selectedMonth}</strong></span>
           </div>
         </header>
 
         <main className="main-content">
           {activeTab === 'dashboard' && (
             <Dashboard
-              profile={profile}
-              transactions={transactions}
-              onAddTransaction={handleAddTransaction}
-              customCategories={customCategories}
-              creditCards={creditCards}
-              debts={debts}
+              incomes={incomes}
+              expenses={expenses}
+              categories={categories}
+              accounts={accounts}
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+              onNavigate={(tab) => setActiveTab(tab)}
             />
           )}
 
-          {activeTab === 'transactions' && (
-            <Transactions
-              transactions={transactions}
-              onDeleteTransaction={handleDeleteTransaction}
-              onUpdateTransaction={handleUpdateTransaction}
-              creditCards={creditCards}
+          {activeTab === 'receitas' && (
+            <IncomesManager
+              incomes={incomes}
+              accounts={accounts}
+              selectedMonth={selectedMonth}
+              onAddIncome={handleAddIncome}
+              onUpdateIncome={handleUpdateIncome}
+              onDeleteIncome={handleDeleteIncome}
             />
           )}
 
-          {activeTab === 'cards' && (
-            <CreditCardsManager
-              creditCards={creditCards}
-              onAddCard={handleAddCard}
-              onDeleteCard={handleDeleteCard}
-              transactions={transactions}
-              onAddTransaction={handleAddTransaction}
+          {activeTab === 'despesas' && (
+            <ExpensesManager
+              expenses={expenses}
+              categories={categories}
+              accounts={accounts}
+              selectedMonth={selectedMonth}
+              onAddExpense={handleAddExpense}
+              onUpdateExpense={handleUpdateExpense}
+              onDeleteExpense={handleDeleteExpense}
             />
           )}
 
-          {activeTab === 'importer' && (
-            <FileImporter
-              customCategories={customCategories}
-              onBatchImport={handleBatchImport}
-              creditCards={creditCards}
-              existingTransactions={transactions}
+          {activeTab === 'contas' && (
+            <AccountsManager
+              accounts={accounts}
+              incomes={incomes}
+              expenses={expenses}
+              selectedMonth={selectedMonth}
+              onAddAccount={handleAddAccount}
+              onUpdateAccount={handleUpdateAccount}
+              onDeleteAccount={handleDeleteAccount}
             />
           )}
 
-          {activeTab === 'debts' && (
-            <DebtsManager
-              debts={debts}
-              onAddDebt={handleAddDebt}
-              onUpdateDebt={handleUpdateDebt}
-              onDeleteDebt={handleDeleteDebt}
-              onAddTransaction={handleAddTransaction}
-            />
-          )}
-
-          {activeTab === 'planning' && (
-            <Planning
-              profile={profile}
-              onSaveProfile={handleSaveProfile}
-              recurring={recurring}
-              onAddRecurring={(rec) => setRecurring(prev => [...prev, rec])}
-              onDeleteRecurring={(id) => setRecurring(prev => prev.filter(r => r.id !== id))}
-              customCategories={customCategories}
+          {activeTab === 'categorias' && (
+            <CategoryManager
+              categories={categories}
+              expenses={expenses}
+              selectedMonth={selectedMonth}
               onAddCategory={handleAddCategory}
+              onUpdateCategory={handleUpdateCategory}
               onDeleteCategory={handleDeleteCategory}
-            />
-          )}
-
-          {activeTab === 'settings' && (
-            <Settings
-              user={user}
-              onLogout={handleLogout}
-              transactions={transactions}
-              profile={profile}
-              recurring={recurring}
-              onImportData={() => fetchUserData()}
             />
           )}
         </main>

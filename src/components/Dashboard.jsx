@@ -1,447 +1,265 @@
-import React, { useState } from 'react';
-import { AlertTriangle, CheckCircle2, ShieldAlert, PlusCircle, Coffee, ShoppingBag, Car, Utensils, Coins, BellRing } from 'lucide-react';
+import React from 'react';
+import {
+  TrendingUp,
+  TrendingDown,
+  Wallet,
+  AlertTriangle,
+  CheckCircle2,
+  Calendar,
+  Plus,
+  ArrowRight,
+  PieChart,
+  Landmark,
+  ShieldCheck
+} from 'lucide-react';
 
 export default function Dashboard({
-  profile,
-  transactions = [],
-  onAddTransaction,
-  customCategories = [],
-  creditCards = [],
-  debts = []
+  incomes,
+  expenses,
+  categories,
+  accounts,
+  selectedMonth,
+  setSelectedMonth,
+  onNavigate
 }) {
-  const [desc, setDesc] = useState('');
-  const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('lifestyle');
-  const [subCategory, setSubCategory] = useState('');
-  const [cardId, setCardId] = useState('');
-  const [type, setType] = useState('expense');
-  const [submitting, setSubmitting] = useState(false);
-
-  // Time calculations
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
-  const currentDay = now.getDate();
-  const daysRemaining = Math.max(1, totalDaysInMonth - currentDay + 1);
-
-  // Filter current month transactions
-  const currentMonthTxs = transactions.filter(t => {
-    const d = new Date(t.date);
-    return d.getFullYear() === year && d.getMonth() === month;
-  });
-
-  // ZBB Calculation: Pronto para Atribuir
-  const availableCash = Number(profile?.available_cash) || Number(profile?.monthly_income) || 0;
-  const totalAllocated = customCategories.reduce((acc, cat) => acc + (Number(cat.budget_limit) || 0), 0)
-    + Number(profile?.limit_essentials || 0) + Number(profile?.limit_lifestyle || 0) + Number(profile?.limit_savings || 0);
-
-  const readyToAssign = availableCash - totalAllocated;
-
-  // Macro categories spend calculations
-  const spentEssentials = currentMonthTxs
-    .filter(t => t.type === 'expense' && t.category === 'essentials')
-    .reduce((sum, t) => sum + Number(t.amount), 0);
-
-  const spentLifestyle = currentMonthTxs
-    .filter(t => t.type === 'expense' && t.category === 'lifestyle')
-    .reduce((sum, t) => sum + Number(t.amount), 0);
-
-  const spentSavings = currentMonthTxs
-    .filter(t => t.type === 'expense' && t.category === 'savings')
-    .reduce((sum, t) => sum + Number(t.amount), 0);
-
-  const spentDebts = currentMonthTxs
-    .filter(t => t.type === 'expense' && t.category === 'debts')
-    .reduce((sum, t) => sum + Number(t.amount), 0);
-
-  const limitLifestyle = Number(profile?.limit_lifestyle || 2500);
-  const remainingLifestyle = limitLifestyle - spentLifestyle;
-  
-  const safeDailySpend = daysRemaining > 0 && remainingLifestyle > 0 
-    ? remainingLifestyle / daysRemaining 
-    : 0;
-
-  const actualDailySpend = currentDay > 0 ? spentLifestyle / currentDay : 0;
-
-  // Semáforo Traffic Light Status
-  let status = 'green';
-  let statusTitle = 'ZONA SEGURA';
-  let statusMessage = `Você tem R$ ${safeDailySpend.toFixed(2)} por dia disponíveis para os próximos ${daysRemaining} dias.`;
-
-  if (limitLifestyle > 0) {
-    if (remainingLifestyle <= 0 || actualDailySpend > safeDailySpend * 1.15) {
-      status = 'red';
-      statusTitle = 'FREIO DE MÃO!';
-      statusMessage = remainingLifestyle <= 0
-        ? `Você estourou o orçamento de Estilo de Vida por R$ ${Math.abs(remainingLifestyle).toFixed(2)}. Pare gastos não essenciais!`
-        : `Sua média diária (R$ ${actualDailySpend.toFixed(2)}) ultrapassa a velocidade segura (R$ ${safeDailySpend.toFixed(2)}). Reduza o ritmo!`;
-    } else if (actualDailySpend > safeDailySpend || (spentLifestyle >= limitLifestyle * 0.75)) {
-      status = 'yellow';
-      statusTitle = 'ATENÇÃO AO RITMO';
-      statusMessage = `Seus gastos flexíveis atingiram ${(spentLifestyle / limitLifestyle * 100).toFixed(0)}% do limite. Economize nos próximos dias!`;
-    }
-  }
-
-  // Calculate Spend by Subcategory for Category Threshold Warnings
-  const categoryBudgets = [
-    { name: 'Alimentação / Mercado', limit: 2500, macro: 'essentials' },
-    { name: 'Transporte / Gasolina', limit: 600, macro: 'essentials' },
-    { name: 'Restaurante / Delivery', limit: 400, macro: 'lifestyle' },
-    { name: 'Lazer & Lanches', limit: 400, macro: 'lifestyle' },
-    { name: 'Compras & Roupas', limit: 500, macro: 'lifestyle' },
-    ...customCategories.map(c => ({ name: c.name, limit: Number(c.budget_limit || 0), macro: c.macro_category }))
+  const MONTHS_LIST = [
+    { code: '2026-01', name: 'Janeiro 2026' },
+    { code: '2026-02', name: 'Fevereiro 2026' },
+    { code: '2026-03', name: 'Março 2026' },
+    { code: '2026-04', name: 'Abril 2026' },
+    { code: '2026-05', name: 'Maio 2026' },
+    { code: '2026-06', name: 'Junho 2026' },
+    { code: '2026-07', name: 'Julho 2026' },
+    { code: '2026-08', name: 'Agosto 2026' },
+    { code: '2026-09', name: 'Setembro 2026' },
+    { code: '2026-10', name: 'Outubro 2026' },
+    { code: '2026-11', name: 'Novembro 2026' },
+    { code: '2026-12', name: 'Dezembro 2026' },
   ];
 
-  const categoryWarnings = [];
+  // Filter for selected month
+  const monthIncomes = incomes.filter(i => i.date && i.date.startsWith(selectedMonth));
+  const monthExpenses = expenses.filter(e => e.date && e.date.startsWith(selectedMonth));
 
-  categoryBudgets.forEach(cat => {
-    if (cat.limit <= 0) return;
+  // Income calculations
+  const predictedIncome = monthIncomes.reduce((sum, i) => sum + (i.predicted_amount || 0), 0);
+  const actualIncome = monthIncomes.reduce((sum, i) => sum + (i.actual_amount || 0), 0);
 
-    const catSpend = currentMonthTxs
-      .filter(t => t.type === 'expense' && (t.sub_category === cat.name || t.description.toLowerCase().includes(cat.name.toLowerCase())))
-      .reduce((sum, t) => sum + Number(t.amount), 0);
+  // Expense calculations
+  const predictedExpense = monthExpenses.reduce((sum, e) => sum + (e.predicted_amount || 0), 0);
+  const actualExpense = monthExpenses.reduce((sum, e) => sum + (e.actual_amount || 0), 0);
 
-    const ratio = catSpend / cat.limit;
+  // Balance
+  const netBalanceActual = actualIncome - actualExpense;
+  const netBalancePredicted = predictedIncome - predictedExpense;
 
-    if (ratio >= 1.0) {
-      categoryWarnings.push({
-        name: cat.name,
-        spend: catSpend,
-        limit: cat.limit,
-        ratio: ratio,
-        type: 'danger',
-        message: `Ultrapassou o teto em R$ ${(catSpend - cat.limit).toFixed(2)}!`
-      });
-    } else if (ratio >= 0.75) {
-      categoryWarnings.push({
-        name: cat.name,
-        spend: catSpend,
-        limit: cat.limit,
-        ratio: ratio,
-        type: 'warning',
-        message: `Atingiu ${(ratio * 100).toFixed(0)}% do limite planejado.`
-      });
-    }
+  const formatCurrency = (val) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+  };
+
+  // Category thermometer & warning alerts calculation
+  const categoryStats = categories.map(cat => {
+    const catExpenses = monthExpenses.filter(e => e.category_id === cat.id);
+    const spent = catExpenses.reduce((sum, e) => sum + (e.actual_amount || 0), 0);
+    const limit = cat.monthly_limit || 0;
+    const rawPct = limit > 0 ? (spent / limit) * 100 : 0;
+
+    let status = 'normal';
+    if (rawPct > 100) status = 'exceeded';
+    else if (rawPct >= 80) status = 'warning';
+
+    return {
+      ...cat,
+      spent,
+      limit,
+      percentage: Math.min(rawPct, 100),
+      rawPct,
+      status
+    };
   });
 
-  const handleQuickPreset = (presetDesc, presetAmount, presetCategory, presetSub = '') => {
-    setDesc(presetDesc);
-    setAmount(presetAmount.toString());
-    setCategory(presetCategory);
-    setSubCategory(presetSub || presetDesc);
-    setType('expense');
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!amount || Number(amount) <= 0) return;
-
-    setSubmitting(true);
-    await onAddTransaction({
-      description: desc || (subCategory ? subCategory : type === 'income' ? 'Receita' : 'Gasto Rápido'),
-      amount: Number(amount),
-      category,
-      sub_category: subCategory || desc || 'Geral',
-      card_id: cardId || null,
-      type,
-      date: new Date().toISOString().split('T')[0]
-    });
-
-    setDesc('');
-    setAmount('');
-    setSubCategory('');
-    setSubmitting(false);
-  };
-
-  const filteredSubCats = customCategories.filter(c => c.macro_category === category);
+  const alerts = categoryStats.filter(c => c.status === 'exceeded' || c.status === 'warning');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      {/* ZBB Quick Header Bar */}
-      <div className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.8))', padding: '0.85rem 1.25rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-          <Coins size={22} style={{ color: readyToAssign === 0 ? '#34d399' : '#60a5fa' }} />
-          <div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Saldo ZBB "Pronto para Atribuir"</span>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: readyToAssign < 0 ? '#f87171' : readyToAssign === 0 ? '#34d399' : '#60a5fa' }}>
-              R$ {readyToAssign.toFixed(2)}
-            </div>
-          </div>
+    <div className="dashboard-container">
+      {/* Top Header & Month Filter */}
+      <div className="dashboard-top-bar">
+        <div>
+          <h1 className="dashboard-title">Dashboard Financeiro</h1>
+          <p className="dashboard-subtitle">Visão consolidada de entradas, saídas e termômetros de orçamento</p>
         </div>
 
-        <div style={{ textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-          <div>Liquidez em Conta: <strong>R$ {availableCash.toFixed(2)}</strong></div>
-          <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>Alocado no Orçamento: R$ {totalAllocated.toFixed(2)}</div>
+        <div className="month-picker-container">
+          <Calendar size={18} />
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="month-picker-select"
+          >
+            {MONTHS_LIST.map(m => (
+              <option key={m.code} value={m.code}>{m.name}</option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* Desktop Grid Layout (2 columns) */}
-      <div className="dashboard-grid">
-        
-        {/* Left Column: Semáforo & Quick Add */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          {/* Traffic Light Card */}
-          <div className={`glass-card traffic-card ${status}`}>
-            <div className="traffic-header">
-              <div className="traffic-indicator">
-                <span className={`status-dot ${status}`}></span>
-                <span>{statusTitle}</span>
-              </div>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                {daysRemaining} dias restantes no mês
-              </span>
-            </div>
-
-            <div className="traffic-body">
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Teto Diário Seguro de Gastos Flexíveis</div>
-              <div className="daily-limit-value" style={{ color: status === 'red' ? 'var(--color-red)' : status === 'yellow' ? 'var(--color-yellow)' : 'var(--color-green)' }}>
-                R$ {safeDailySpend.toFixed(2)} <span style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--text-muted)' }}>/ dia</span>
-              </div>
-
-              <div className={`traffic-message ${status}`}>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                  {status === 'red' && <ShieldAlert size={20} style={{ flexShrink: 0, marginTop: '2px' }} />}
-                  {status === 'yellow' && <AlertTriangle size={20} style={{ flexShrink: 0, marginTop: '2px' }} />}
-                  {status === 'green' && <CheckCircle2 size={20} style={{ flexShrink: 0, marginTop: '2px' }} />}
-                  <div>{statusMessage}</div>
-                </div>
-              </div>
-            </div>
+      {/* Main KPI Cards */}
+      <div className="dashboard-kpi-grid">
+        <div className="kpi-card kpi-income">
+          <div className="kpi-header">
+            <span className="kpi-title">Total Receitas ({selectedMonth})</span>
+            <div className="kpi-icon-badge icon-income"><TrendingUp size={20} /></div>
           </div>
-
-          {/* Quick Add Form */}
-          <div className="glass-card quick-add-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div className="section-title">Lançamento Rápido de Gastos</div>
-              <div style={{ display: 'flex', gap: '0.4rem' }}>
-                <button
-                  type="button"
-                  className={`pill-btn ${type === 'expense' ? 'active lifestyle' : ''}`}
-                  onClick={() => setType('expense')}
-                >
-                  Despesa
-                </button>
-                <button
-                  type="button"
-                  className={`pill-btn ${type === 'income' ? 'active savings' : ''}`}
-                  onClick={() => setType('income')}
-                >
-                  Receita
-                </button>
-              </div>
-            </div>
-
-            {/* Presets */}
-            <div className="preset-buttons">
-              <button type="button" className="preset-btn" onClick={() => handleQuickPreset('Café', 5, 'lifestyle', 'Café / Lanche')}>
-                <Coffee size={15} /> Café R$ 5
-              </button>
-              <button type="button" className="preset-btn" onClick={() => handleQuickPreset('Almoço', 35, 'lifestyle', 'Restaurante / Delivery')}>
-                <Utensils size={15} /> Almoço R$ 35
-              </button>
-              <button type="button" className="preset-btn" onClick={() => handleQuickPreset('Mercado', 100, 'essentials', 'Alimentação / Mercado')}>
-                <ShoppingBag size={15} /> Mercado R$ 100
-              </button>
-              <button type="button" className="preset-btn" onClick={() => handleQuickPreset('Gasolina', 150, 'essentials', 'Transporte / Gasolina')}>
-                <Car size={15} /> Gasolina R$ 150
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div className="quick-inputs">
-                <input
-                  type="number"
-                  step="0.01"
-                  className="input-glass"
-                  placeholder="R$ 0,00"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  required
-                  style={{ fontWeight: 700, fontSize: '1.25rem' }}
-                />
-                <input
-                  type="text"
-                  className="input-glass"
-                  placeholder="Descrição (ex: Bramil, Padaria)"
-                  value={desc}
-                  onChange={(e) => setDesc(e.target.value)}
-                />
-              </div>
-
-              <div className="category-pills">
-                <button
-                  type="button"
-                  className={`pill-btn ${category === 'essentials' ? 'active essentials' : ''}`}
-                  onClick={() => setCategory('essentials')}
-                >
-                  Essencial
-                </button>
-                <button
-                  type="button"
-                  className={`pill-btn ${category === 'lifestyle' ? 'active lifestyle' : ''}`}
-                  onClick={() => setCategory('lifestyle')}
-                >
-                  Estilo de Vida
-                </button>
-                <button
-                  type="button"
-                  className={`pill-btn ${category === 'savings' ? 'active savings' : ''}`}
-                  onClick={() => setCategory('savings')}
-                >
-                  Reservas
-                </button>
-                <button
-                  type="button"
-                  className={`pill-btn ${category === 'debts' ? 'active debts' : ''}`}
-                  onClick={() => setCategory('debts')}
-                >
-                  Dívidas
-                </button>
-              </div>
-
-              <div className="quick-inputs">
-                {filteredSubCats.length > 0 && (
-                  <select
-                    className="input-glass"
-                    value={subCategory}
-                    onChange={(e) => setSubCategory(e.target.value)}
-                  >
-                    <option value="">Selecione Subcategoria...</option>
-                    {filteredSubCats.map(sc => (
-                      <option key={sc.id} value={sc.name}>{sc.name}</option>
-                    ))}
-                  </select>
-                )}
-
-                {creditCards.length > 0 && (
-                  <select
-                    className="input-glass"
-                    value={cardId}
-                    onChange={(e) => setCardId(e.target.value)}
-                  >
-                    <option value="">Forma: Pix / Conta</option>
-                    {creditCards.map(card => (
-                      <option key={card.id} value={card.id}>Cartão: {card.name}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              <button type="submit" className="btn-primary" disabled={submitting}>
-                <PlusCircle size={18} /> {submitting ? 'Salvando...' : 'Salvar Gasto'}
-              </button>
-            </form>
+          <div className="kpi-value text-income">{formatCurrency(actualIncome)}</div>
+          <div className="kpi-subtext">
+            <span>Previsão: {formatCurrency(predictedIncome)}</span>
           </div>
         </div>
 
-        {/* Right Column: Category Warnings & Budget Summaries */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          
-          {/* Category Warnings Section */}
-          <div className="glass-card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)' }}>
-                <BellRing size={18} style={{ color: 'var(--color-yellow)' }} />
-                Avisos de Categorias Próximas do Limite
-              </div>
-              <span className="alert-badge warning">{categoryWarnings.length} Alerta(s)</span>
+        <div className="kpi-card kpi-expense">
+          <div className="kpi-header">
+            <span className="kpi-title">Total Despesas ({selectedMonth})</span>
+            <div className="kpi-icon-badge icon-expense"><TrendingDown size={20} /></div>
+          </div>
+          <div className="kpi-value text-expense">{formatCurrency(actualExpense)}</div>
+          <div className="kpi-subtext">
+            <span>Previsão: {formatCurrency(predictedExpense)}</span>
+          </div>
+        </div>
+
+        <div className="kpi-card kpi-balance">
+          <div className="kpi-header">
+            <span className="kpi-title">Saldo Realizado</span>
+            <div className="kpi-icon-badge icon-balance"><Wallet size={20} /></div>
+          </div>
+          <div className={`kpi-value ${netBalanceActual >= 0 ? 'text-income' : 'text-expense'}`}>
+            {formatCurrency(netBalanceActual)}
+          </div>
+          <div className="kpi-subtext">
+            <span>Saldo Previsto: {formatCurrency(netBalancePredicted)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Limit Alerts Banner */}
+      {alerts.length > 0 && (
+        <div className="alerts-callout-banner">
+          <div className="alerts-callout-header">
+            <AlertTriangle size={22} className="text-warning" />
+            <div>
+              <h3>Avisos de Atenção de Limites ({alerts.length})</h3>
+              <p>Categorias que atingiram 80% ou ultrapassaram a previsão mensal em {selectedMonth}:</p>
             </div>
-
-            {categoryWarnings.length === 0 ? (
-              <div className="traffic-message green" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <CheckCircle2 size={18} /> Nenhuma categoria ultrapassou 75% do teto planejado. Parabéns!
+          </div>
+          <div className="alerts-list">
+            {alerts.map(item => (
+              <div key={item.id} className={`alert-item-pill ${item.status === 'exceeded' ? 'pill-danger' : 'pill-warning'}`}>
+                <span className="font-semibold">{item.name}:</span>
+                <span>{formatCurrency(item.spent)} de {formatCurrency(item.limit)} ({item.rawPct.toFixed(0)}%)</span>
+                {item.status === 'exceeded' ? (
+                  <span className="badge badge-danger">Ultrpassou Limite</span>
+                ) : (
+                  <span className="badge badge-warning">Atenção (80%+)</span>
+                )}
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {categoryWarnings.map((warn, i) => (
-                  <div key={i} className={`category-alert-card ${warn.type}`}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span className={`alert-badge ${warn.type}`}>
-                        {warn.type === 'danger' ? 'Excedido' : 'Próximo do Teto'}
-                      </span>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>
-                        R$ {warn.spend.toFixed(2)} / R$ {warn.limit.toFixed(2)}
-                      </span>
-                    </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-                    <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{warn.name}</div>
-                    <div style={{ fontSize: '0.8rem', opacity: 0.9 }}>{warn.message}</div>
+      {/* Thermometers Grid */}
+      <div className="dashboard-section-card">
+        <div className="section-card-header">
+          <div>
+            <h2>Termômetro de Categorias & Orçamento</h2>
+            <p>Acompanhamento visual da barra de progresso de cada categoria</p>
+          </div>
+          <button className="btn btn-outline" onClick={() => onNavigate('categorias')}>
+            <span>Gerenciar Limites</span>
+            <ArrowRight size={16} />
+          </button>
+        </div>
 
-                    <div className="progress-bar-bg" style={{ height: '6px', marginTop: '0.2rem' }}>
-                      <div
-                        className={`progress-bar-fill ${warn.type === 'danger' ? 'lifestyle exceeded' : 'lifestyle'}`}
-                        style={{ width: `${Math.min(100, warn.ratio * 100)}%` }}
-                      ></div>
-                    </div>
+        <div className="thermometer-grid-dashboard">
+          {categoryStats.map(cat => {
+            let progressClass = 'progress-normal';
+            if (cat.status === 'exceeded') progressClass = 'progress-danger';
+            else if (cat.status === 'warning') progressClass = 'progress-warning';
+
+            return (
+              <div key={cat.id} className="dash-thermometer-item">
+                <div className="dash-thermo-top">
+                  <div className="dash-thermo-title">
+                    <span className="color-dot" style={{ backgroundColor: cat.color }}></span>
+                    <span className="font-medium text-sm">{cat.name}</span>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Macro Budget Summaries */}
-          <div className="glass-card budget-progress-group">
-            <div className="section-title">Resumo Orçamentário do Mês</div>
-
-            {/* Estilo de Vida */}
-            <div>
-              <div className="progress-header">
-                <span>Estilo de Vida (Flexíveis)</span>
-                <span>R$ {spentLifestyle.toFixed(2)} / R$ {limitLifestyle.toFixed(2)}</span>
-              </div>
-              <div className="progress-bar-bg" style={{ marginTop: '0.35rem' }}>
-                <div
-                  className={`progress-bar-fill lifestyle ${spentLifestyle > limitLifestyle ? 'exceeded' : ''}`}
-                  style={{ width: `${Math.min(100, limitLifestyle > 0 ? (spentLifestyle / limitLifestyle) * 100 : 0)}%` }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Essenciais */}
-            <div>
-              <div className="progress-header">
-                <span>Essenciais (Sobrevivência & Moradia)</span>
-                <span>R$ {spentEssentials.toFixed(2)} / R$ {Number(profile?.limit_essentials || 8500).toFixed(2)}</span>
-              </div>
-              <div className="progress-bar-bg" style={{ marginTop: '0.35rem' }}>
-                <div
-                  className="progress-bar-fill essentials"
-                  style={{ width: `${Math.min(100, Number(profile?.limit_essentials || 8500) > 0 ? (spentEssentials / (profile?.limit_essentials || 8500)) * 100 : 0)}%` }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Reservas */}
-            <div>
-              <div className="progress-header">
-                <span>Reservas & Futuro</span>
-                <span>R$ {spentSavings.toFixed(2)} / R$ {Number(profile?.limit_savings || 1000).toFixed(2)}</span>
-              </div>
-              <div className="progress-bar-bg" style={{ marginTop: '0.35rem' }}>
-                <div
-                  className="progress-bar-fill savings"
-                  style={{ width: `${Math.min(100, Number(profile?.limit_savings || 1000) > 0 ? (spentSavings / (profile?.limit_savings || 1000)) * 100 : 0)}%` }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Servico de Dividas */}
-            {spentDebts > 0 && (
-              <div>
-                <div className="progress-header">
-                  <span>Serviço de Dívidas & Amortização</span>
-                  <span>R$ {spentDebts.toFixed(2)}</span>
+                  <span className="text-xs font-semibold">
+                    {formatCurrency(cat.spent)} / {formatCurrency(cat.limit)}
+                  </span>
                 </div>
-                <div className="progress-bar-bg" style={{ marginTop: '0.35rem' }}>
-                  <div className="progress-bar-fill lifestyle" style={{ width: '100%', background: '#f59e0b' }}></div>
+
+                <div className="progress-bar-track">
+                  <div
+                    className={`progress-bar-fill ${progressClass}`}
+                    style={{ width: `${cat.percentage}%` }}
+                  ></div>
+                </div>
+
+                <div className="dash-thermo-footer">
+                  <span className="text-xs text-secondary">{cat.rawPct.toFixed(0)}% utilizado</span>
+                  {cat.status === 'exceeded' && (
+                    <span className="text-xs text-expense font-bold">⚠️ Acima do Limite</span>
+                  )}
+                  {cat.status === 'warning' && (
+                    <span className="text-xs text-warning font-semibold">⚠️ 80%+ do Limite</span>
+                  )}
+                  {cat.status === 'normal' && (
+                    <span className="text-xs text-income font-medium">✓ Dentro da Previsão</span>
+                  )}
                 </div>
               </div>
-            )}
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Accounts Breakdown Bar */}
+      <div className="dashboard-section-card">
+        <div className="section-card-header">
+          <div>
+            <h2>Consolidação por Contas Bancárias</h2>
+            <p>Entradas e saídas separadas por Carteira e Contas Correntes</p>
           </div>
+          <button className="btn btn-outline" onClick={() => onNavigate('contas')}>
+            <span>Ver Contas</span>
+            <ArrowRight size={16} />
+          </button>
+        </div>
+
+        <div className="accounts-summary-row">
+          {accounts.map(acc => {
+            const accIncomes = monthIncomes.filter(i => i.account_id === acc.id).reduce((s, i) => s + (i.actual_amount || 0), 0);
+            const accExpenses = monthExpenses.filter(e => e.account_id === acc.id).reduce((s, e) => s + (e.actual_amount || 0), 0);
+            const balance = (acc.initial_balance || 0) + accIncomes - accExpenses;
+
+            return (
+              <div key={acc.id} className="account-mini-card">
+                <div className="mini-card-header">
+                  <Landmark size={18} className="text-secondary" />
+                  <span className="font-semibold">{acc.name}</span>
+                </div>
+                <div className={`mini-card-balance ${balance >= 0 ? 'text-income' : 'text-expense'}`}>
+                  {formatCurrency(balance)}
+                </div>
+                <div className="mini-card-details">
+                  <span className="text-income">+ {formatCurrency(accIncomes)}</span>
+                  <span className="text-expense">- {formatCurrency(accExpenses)}</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
   );
 }
-
