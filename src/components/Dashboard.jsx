@@ -72,6 +72,7 @@ export default function Dashboard({
       ...cat,
       spent,
       limit,
+      expenseCount: catExpenses.length,
       percentage: Math.min(rawPct, 100),
       rawPct,
       status
@@ -206,7 +207,9 @@ export default function Dashboard({
                 </div>
 
                 <div className="dash-thermo-footer">
-                  <span className="text-xs text-secondary">{cat.rawPct.toFixed(0)}% utilizado</span>
+                  <span className="text-xs text-secondary">
+                    {cat.rawPct.toFixed(0)}% ({cat.expenseCount} despesa{cat.expenseCount !== 1 ? 's' : ''})
+                  </span>
                   {cat.status === 'exceeded' && (
                     <span className="text-xs text-expense font-bold">⚠️ Acima do Limite</span>
                   )}

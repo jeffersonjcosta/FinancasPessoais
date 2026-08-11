@@ -32,16 +32,22 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedMonth, setSelectedMonth] = useState('2026-05');
 
+  const MIGRATION_VERSION = 'v2_macro_categories';
+
   // Accounts state
   const [accounts, setAccounts] = useState(() => {
     const saved = localStorage.getItem('FIN_ACCOUNTS');
     return saved ? JSON.parse(saved) : INITIAL_ACCOUNTS;
   });
 
-  // Categories state
+  // Categories & Expenses state with auto-migration
   const [categories, setCategories] = useState(() => {
+    const dataVersion = localStorage.getItem('FIN_DATA_VERSION');
     const saved = localStorage.getItem('FIN_CATEGORIES');
-    return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
+    if (dataVersion !== MIGRATION_VERSION || !saved) {
+      return INITIAL_CATEGORIES;
+    }
+    return JSON.parse(saved);
   });
 
   // Incomes state
@@ -52,8 +58,15 @@ export default function App() {
 
   // Expenses state
   const [expenses, setExpenses] = useState(() => {
+    const dataVersion = localStorage.getItem('FIN_DATA_VERSION');
     const saved = localStorage.getItem('FIN_EXPENSES');
-    return saved ? JSON.parse(saved) : INITIAL_EXPENSES;
+    if (dataVersion !== MIGRATION_VERSION || !saved) {
+      localStorage.setItem('FIN_DATA_VERSION', MIGRATION_VERSION);
+      localStorage.setItem('FIN_CATEGORIES', JSON.stringify(INITIAL_CATEGORIES));
+      localStorage.setItem('FIN_EXPENSES', JSON.stringify(INITIAL_EXPENSES));
+      return INITIAL_EXPENSES;
+    }
+    return JSON.parse(saved);
   });
 
   // LocalStorage Persist
