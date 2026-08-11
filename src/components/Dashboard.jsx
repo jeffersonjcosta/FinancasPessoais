@@ -10,7 +10,8 @@ import {
   ArrowRight,
   PieChart,
   Landmark,
-  ShieldCheck
+  ShieldCheck,
+  CreditCard
 } from 'lucide-react';
 
 export default function Dashboard({
@@ -18,6 +19,7 @@ export default function Dashboard({
   expenses,
   categories,
   accounts,
+  creditCards = [],
   selectedMonth,
   setSelectedMonth,
   onNavigate
@@ -81,6 +83,38 @@ export default function Dashboard({
 
   const alerts = categoryStats.filter(c => c.status === 'exceeded' || c.status === 'warning');
 
+  // Credit Cards stats calculation
+  const cardStats = creditCards.map(card => {
+    const cardExpenses = monthExpenses.filter(exp => {
+      if (exp.card_id && exp.card_id === card.id) return true;
+      const isCredit = exp.payment_method === 'Cartão de Crédito' || (exp.category_id && exp.category_id.includes('cartao'));
+      const d = (exp.description || '').toLowerCase();
+      const c = (card.name || '').toLowerCase();
+      if (c.includes('credicard') && (d.includes('credicard') || exp.category_id === 'cat-credicard')) return true;
+      if (c.includes('bradesco') && (d.includes('bradesco') || exp.category_id === 'cat-bradesco')) return true;
+      return isCredit && (!exp.card_id || exp.card_id === card.id);
+    });
+
+    const spent = cardExpenses.reduce((sum, e) => sum + (e.actual_amount || e.predicted_amount || 0), 0);
+    const limit = card.limit_amount || 0;
+    const rawPct = limit > 0 ? (spent / limit) * 100 : 0;
+
+    let status = 'normal';
+    if (rawPct > 100) status = 'exceeded';
+    else if (rawPct >= 80) status = 'warning';
+
+    return {
+      ...card,
+      spent,
+      limit,
+      percentage: Math.min(rawPct, 100),
+      rawPct,
+      status
+    };
+  });
+
+  const cardAlerts = cardStats.filter(c => c.status === 'exceeded' || c.status === 'warning');
+
   return (
     <div className="dashboard-container">
       {/* Top Header & Month Filter */}
@@ -142,7 +176,33 @@ export default function Dashboard({
         </div>
       </div>
 
-      {/* Limit Alerts Banner */}
+      {/* Credit Cards Alerts Banner */}
+      {cardAlerts.length > 0 && (
+        <div className="alerts-callout-banner" style={{ borderLeftColor: '#ef4444' }}>
+          <div className="alerts-callout-header">
+            <CreditCard size={22} className="text-expense" />
+            <div>
+              <h3>Aviso de Limites de Cartões de Crédito ({cardAlerts.length})</h3>
+              <p>Cartões que atingiram 80% ou ultrapassaram o limite cadastrado em {selectedMonth}:</p>
+            </div>
+          </div>
+          <div className="alerts-list">
+            {cardAlerts.map(card => (
+              <div key={card.id} className={`alert-item-pill ${card.status === 'exceeded' ? 'pill-danger' : 'pill-warning'}`}>
+                <span className="font-semibold">{card.name}:</span>
+                <span>Fatura {formatCurrency(card.spent)} de {formatCurrency(card.limit)} ({card.rawPct.toFixed(0)}%)</span>
+                {card.status === 'exceeded' ? (
+                  <span className="badge badge-danger">Limite Excedido</span>
+                ) : (
+                  <span className="badge badge-warning">Atenção (80%+)</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Category Limit Alerts Banner */}
       {alerts.length > 0 && (
         <div className="alerts-callout-banner">
           <div className="alerts-callout-header">

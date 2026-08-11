@@ -5,6 +5,7 @@ export default function ExpensesManager({
   expenses,
   categories,
   accounts,
+  creditCards = [],
   selectedMonth,
   onAddExpense,
   onUpdateExpense,
@@ -31,6 +32,8 @@ export default function ExpensesManager({
     predicted_amount: '',
     actual_amount: '',
     payment_method: 'PIX',
+    card_id: creditCards[0]?.id || '',
+    installments: '1',
     account_id: accounts[0]?.id || 'acc-jeff',
     status: 'ok',
     notes: ''
@@ -45,6 +48,8 @@ export default function ExpensesManager({
       predicted_amount: '',
       actual_amount: '',
       payment_method: 'PIX',
+      card_id: creditCards[0]?.id || '',
+      installments: '1',
       account_id: accounts[0]?.id || 'acc-jeff',
       status: 'ok',
       notes: ''
@@ -61,6 +66,8 @@ export default function ExpensesManager({
       predicted_amount: exp.predicted_amount ?? '',
       actual_amount: exp.actual_amount ?? '',
       payment_method: exp.payment_method || 'PIX',
+      card_id: exp.card_id || creditCards[0]?.id || '',
+      installments: '1',
       account_id: exp.account_id || accounts[0]?.id,
       status: exp.status || 'ok',
       notes: exp.notes || ''
@@ -72,22 +79,66 @@ export default function ExpensesManager({
     e.preventDefault();
     if (!formData.description || (!formData.predicted_amount && !formData.actual_amount)) return;
 
-    const payload = {
-      date: formData.date,
-      description: formData.description,
-      category_id: formData.category_id,
-      predicted_amount: parseFloat(formData.predicted_amount || 0),
-      actual_amount: parseFloat(formData.actual_amount || formData.predicted_amount || 0),
-      payment_method: formData.payment_method,
-      account_id: formData.account_id,
-      status: formData.status,
-      notes: formData.notes
-    };
+    const baseAmount = parseFloat(formData.actual_amount || formData.predicted_amount || 0);
+    const instCount = parseInt(formData.installments || '1', 10);
 
     if (editingExpense) {
+      const payload = {
+        date: formData.date,
+        description: formData.description,
+        category_id: formData.category_id,
+        predicted_amount: parseFloat(formData.predicted_amount || 0),
+        actual_amount: baseAmount,
+        payment_method: formData.payment_method,
+        card_id: formData.payment_method === 'Cartão de Crédito' ? formData.card_id : null,
+        account_id: formData.account_id,
+        status: formData.status,
+        notes: formData.notes
+      };
       onUpdateExpense(editingExpense.id, payload);
     } else {
-      onAddExpense(payload);
+      if (formData.payment_method === 'Cartão de Crédito' && instCount > 1) {
+        const monthlyVal = parseFloat((baseAmount / instCount).toFixed(2));
+        const [yStr, mStr, dStr] = formData.date.split('-');
+        let startYear = parseInt(yStr, 10);
+        let startMonth = parseInt(mStr, 10) - 1; // 0-indexed
+        let startDay = parseInt(dStr, 10);
+
+        for (let i = 0; i < instCount; i++) {
+          const dt = new Date(startYear, startMonth + i, startDay);
+          const y = dt.getFullYear();
+          const m = String(dt.getMonth() + 1).padStart(2, '0');
+          const d = String(dt.getDate()).padStart(2, '0');
+          const dateStr = `${y}-${m}-${d}`;
+
+          onAddExpense({
+            date: dateStr,
+            description: `${formData.description} (${i + 1}/${instCount})`,
+            category_id: formData.category_id,
+            predicted_amount: monthlyVal,
+            actual_amount: monthlyVal,
+            payment_method: 'Cartão de Crédito',
+            card_id: formData.card_id,
+            installment_info: `${i + 1}/${instCount}`,
+            account_id: formData.account_id,
+            status: formData.status,
+            notes: formData.notes
+          });
+        }
+      } else {
+        onAddExpense({
+          date: formData.date,
+          description: formData.description,
+          category_id: formData.category_id,
+          predicted_amount: parseFloat(formData.predicted_amount || 0),
+          actual_amount: baseAmount,
+          payment_method: formData.payment_method,
+          card_id: formData.payment_method === 'Cartão de Crédito' ? formData.card_id : null,
+          account_id: formData.account_id,
+          status: formData.status,
+          notes: formData.notes
+        });
+      }
     }
 
     setShowModal(false);
@@ -322,6 +373,37 @@ export default function ExpensesManager({
                   </select>
                 </div>
               </div>
+
+              {formData.payment_method === 'Cartão de Crédito' && (
+                <div className="form-row" style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.3)', marginBottom: '1rem' }}>
+                  <div className="form-group">
+                    <label style={{ color: '#93c5fd' }}>Selecione o Cartão *</label>
+                    <select
+                      value={formData.card_id}
+                      onChange={(e) => setFormData({ ...formData, card_id: e.target.value })}
+                    >
+                      <option value="">Selecione um cartão...</option>
+                      {creditCards.map(card => (
+                        <option key={card.id} value={card.id}>{card.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {!editingExpense && (
+                    <div className="form-group">
+                      <label style={{ color: '#93c5fd' }}>Parcelas (1x até 48x)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="48"
+                        placeholder="1"
+                        value={formData.installments}
+                        onChange={(e) => setFormData({ ...formData, installments: e.target.value })}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="form-row">
                 <div className="form-group">

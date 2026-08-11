@@ -7,8 +7,10 @@ import IncomesManager from './components/IncomesManager';
 import ExpensesManager from './components/ExpensesManager';
 import AccountsManager from './components/AccountsManager';
 import CategoryManager from './components/CategoryManager';
+import CreditCardsManager from './components/CreditCardsManager';
 import {
   INITIAL_ACCOUNTS,
+  INITIAL_CREDIT_CARDS,
   INITIAL_CATEGORIES,
   INITIAL_INCOMES,
   INITIAL_EXPENSES
@@ -69,7 +71,24 @@ export default function App() {
     return JSON.parse(saved);
   });
 
-  // LocalStorage Persist
+  // Credit Cards state
+  const [creditCards, setCreditCards] = useState(() => {
+    const saved = localStorage.getItem('FIN_CREDIT_CARDS');
+    return saved ? JSON.parse(saved) : INITIAL_CREDIT_CARDS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('FIN_CREDIT_CARDS', JSON.stringify(creditCards));
+  }, [creditCards]);
+
+  const handleAddCard = (newCard) => {
+    const item = { ...newCard, id: 'card-' + Date.now() };
+    setCreditCards(prev => [...prev, item]);
+  };
+
+  const handleDeleteCard = (cardId) => {
+    setCreditCards(prev => prev.filter(c => c.id !== cardId));
+  };
   useEffect(() => {
     localStorage.setItem('FIN_ACCOUNTS', JSON.stringify(accounts));
   }, [accounts]);
@@ -275,6 +294,7 @@ export default function App() {
               expenses={expenses}
               categories={categories}
               accounts={accounts}
+              creditCards={creditCards}
               selectedMonth={selectedMonth}
               setSelectedMonth={setSelectedMonth}
               onNavigate={(tab) => setActiveTab(tab)}
@@ -297,9 +317,25 @@ export default function App() {
               expenses={expenses}
               categories={categories}
               accounts={accounts}
+              creditCards={creditCards}
               selectedMonth={selectedMonth}
               onAddExpense={handleAddExpense}
               onUpdateExpense={handleUpdateExpense}
+              onDeleteExpense={handleDeleteExpense}
+            />
+          )}
+
+          {activeTab === 'cartoes' && (
+            <CreditCardsManager
+              creditCards={creditCards}
+              expenses={expenses}
+              categories={categories}
+              accounts={accounts}
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+              onAddCard={handleAddCard}
+              onDeleteCard={handleDeleteCard}
+              onAddExpense={handleAddExpense}
               onDeleteExpense={handleDeleteExpense}
             />
           )}

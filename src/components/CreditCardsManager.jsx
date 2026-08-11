@@ -1,26 +1,69 @@
 import React, { useState } from 'react';
-import { CreditCard, Plus, Trash2, Calendar, ShieldCheck, ShieldAlert, TrendingUp, Layers, HelpCircle } from 'lucide-react';
+import {
+  CreditCard,
+  Plus,
+  Trash2,
+  Calendar,
+  ShieldCheck,
+  ShieldAlert,
+  TrendingUp,
+  Layers,
+  FileText,
+  UploadCloud,
+  CheckCircle2,
+  Clock,
+  Filter,
+  X
+} from 'lucide-react';
+import FileImporter from './FileImporter';
 
 export default function CreditCardsManager({
   creditCards = [],
+  expenses = [],
+  categories = [],
+  accounts = [],
+  selectedMonth = '2026-05',
+  setSelectedMonth,
   onAddCard,
   onDeleteCard,
-  transactions = [],
-  onAddTransaction
+  onAddExpense,
+  onDeleteExpense
 }) {
+  // New Card Form State
   const [name, setName] = useState('');
   const [limitAmount, setLimitAmount] = useState('');
   const [closingDay, setClosingDay] = useState('15');
   const [dueDay, setDueDay] = useState('24');
-  const [color, setColor] = useState('#4f46e5');
+  const [color, setColor] = useState('#3b82f6');
 
-  // Installment purchase form
+  // Active Selected Card for Detailed Invoice View
+  const [activeCardId, setActiveCardId] = useState(() => creditCards[0]?.id || 'card-credicard');
+
+  // Installment purchase modal
   const [showInstallmentForm, setShowInstallmentForm] = useState(false);
   const [instCardId, setInstCardId] = useState('');
   const [instDesc, setInstDesc] = useState('');
   const [instTotalAmount, setInstTotalAmount] = useState('');
-  const [instCount, setInstCount] = useState('10');
-  const [instCategory, setInstCategory] = useState('lifestyle');
+  const [instCount, setInstCount] = useState('3');
+  const [instCategoryId, setInstCategoryId] = useState(categories[0]?.id || 'cat-outros');
+
+  // File Importer Modal
+  const [showImportModal, setShowImportModal] = useState(false);
+
+  const MONTHS_LIST = [
+    { code: '2026-01', name: 'Janeiro 2026' },
+    { code: '2026-02', name: 'Fevereiro 2026' },
+    { code: '2026-03', name: 'Março 2026' },
+    { code: '2026-04', name: 'Abril 2026' },
+    { code: '2026-05', name: 'Maio 2026' },
+    { code: '2026-06', name: 'Junho 2026' },
+    { code: '2026-07', name: 'Julho 2026' },
+    { code: '2026-08', name: 'Agosto 2026' },
+    { code: '2026-09', name: 'Setembro 2026' },
+    { code: '2026-10', name: 'Outubro 2026' },
+    { code: '2026-11', name: 'Novembro 2026' },
+    { code: '2026-12', name: 'Dezembro 2026' },
+  ];
 
   const handleAddCard = async (e) => {
     e.preventDefault();
@@ -28,9 +71,9 @@ export default function CreditCardsManager({
 
     await onAddCard({
       name: name.trim(),
-      limit_amount: Number(limitAmount) || 0,
-      closing_day: Number(closingDay) || 1,
-      due_day: Number(dueDay) || 10,
+      limit_amount: parseFloat(limitAmount) || 0,
+      closing_day: parseInt(closingDay, 10) || 15,
+      due_day: parseInt(dueDay, 10) || 24,
       color: color,
       reserved_cash: 0
     });
@@ -39,325 +82,477 @@ export default function CreditCardsManager({
     setLimitAmount('');
   };
 
-  const handleAddInstallmentPurchase = async (e) => {
+  const handleAddInstallmentPurchase = (e) => {
     e.preventDefault();
-    if (!instCardId || !instDesc || !instTotalAmount || !instCount) return;
+    const targetCardId = instCardId || activeCardId || creditCards[0]?.id;
+    if (!targetCardId || !instDesc || !instTotalAmount || !instCount) return;
 
-    const total = Number(instTotalAmount);
-    const count = Number(instCount);
-    const monthlyVal = total / count;
-    const today = new Date();
+    const total = parseFloat(instTotalAmount);
+    const count = parseInt(instCount, 10);
+    const monthlyVal = parseFloat((total / count).toFixed(2));
+    
+    // Parse starting date
+    const [yStr, mStr] = selectedMonth.split('-');
+    let startYear = parseInt(yStr, 10);
+    let startMonth = parseInt(mStr, 10) - 1; // 0-indexed
 
-    // Create 'count' transactions for the upcoming months
     for (let i = 0; i < count; i++) {
-      const txDate = new Date(today.getFullYear(), today.getMonth() + i, 15);
-      const dateStr = txDate.toISOString().split('T')[0];
+      const dt = new Date(startYear, startMonth + i, 10);
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const d = String(dt.getDate()).padStart(2, '0');
+      const dateStr = `${y}-${m}-${d}`;
 
-      await onAddTransaction({
+      onAddExpense({
+        date: dateStr,
         description: `${instDesc} (${i + 1}/${count})`,
-        amount: Number(monthlyVal.toFixed(2)),
-        type: 'expense',
-        category: instCategory,
-        sub_category: 'Compras Parceladas',
-        card_id: instCardId,
+        category_id: instCategoryId,
+        predicted_amount: monthlyVal,
+        actual_amount: monthlyVal,
+        payment_method: 'Cartão de Crédito',
+        card_id: targetCardId,
         installment_info: `${i + 1}/${count}`,
-        date: dateStr
+        account_id: accounts[0]?.id || 'acc-jeff',
+        status: 'pendente',
+        notes: `Compra parcelada (${i + 1} de ${count})`
       });
     }
 
     setInstDesc('');
     setInstTotalAmount('');
     setShowInstallmentForm(false);
-    alert(`${count} parcelas no valor de R$ ${monthlyVal.toFixed(2)} criadas com sucesso!`);
   };
 
-  // Current month filter
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
-
-  const getCardCurrentInvoice = (cardId) => {
-    return transactions
-      .filter(t => {
-        if (t.card_id !== cardId || t.type !== 'expense') return false;
-        const d = new Date(t.date);
-        return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
-      })
-      .reduce((sum, t) => sum + Number(t.amount), 0);
+  const formatCurrency = (val) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
   };
 
-  // Calculate CDI interest arbitrage gain (assuming 10.5% p.a. CDI rate ~ 0.039% per day)
-  const calculateCdiArbitrage = (invoiceAmount, dueDayNumber) => {
-    if (invoiceAmount <= 0) return 0;
-    const currentDay = now.getDate();
-    const daysUntilDue = dueDayNumber > currentDay ? dueDayNumber - currentDay : (30 - currentDay) + dueDayNumber;
-    const dailyRate = Math.pow(1 + 0.105, 1 / 365) - 1;
-    const estimatedYield = invoiceAmount * (Math.pow(1 + dailyRate, daysUntilDue) - 1);
-    return { daysUntilDue, estimatedYield };
+  // Helper to check if an expense matches a credit card
+  const isExpenseForCard = (exp, card) => {
+    if (!exp.date || !exp.date.startsWith(selectedMonth)) return false;
+    
+    // Explicit card_id match
+    if (exp.card_id && exp.card_id === card.id) return true;
+
+    // Payment method match or description match
+    const isCredit = exp.payment_method === 'Cartão de Crédito' || (exp.category_id && exp.category_id.includes('cartao'));
+    const descLower = (exp.description || '').toLowerCase();
+    const cardNameLower = (card.name || '').toLowerCase();
+
+    if (cardNameLower.includes('credicard') && (descLower.includes('credicard') || exp.category_id === 'cat-credicard')) return true;
+    if (cardNameLower.includes('bradesco') && (descLower.includes('bradesco') || exp.category_id === 'cat-bradesco')) return true;
+
+    return isCredit && (!exp.card_id || exp.card_id === card.id);
+  };
+
+  // Calculate current invoice total per card
+  const getCardInvoiceAmount = (card) => {
+    return expenses
+      .filter(e => isExpenseForCard(e, card))
+      .reduce((sum, e) => sum + (e.actual_amount || e.predicted_amount || 0), 0);
+  };
+
+  // Get active card object
+  const currentCard = creditCards.find(c => c.id === activeCardId) || creditCards[0] || {
+    id: 'card-credicard',
+    name: 'Cartão Credicard',
+    limit_amount: 1700,
+    closing_day: 15,
+    due_day: 24,
+    color: '#3b82f6'
+  };
+
+  // Filter invoice items for active card in selectedMonth
+  const activeInvoiceExpenses = expenses.filter(e => isExpenseForCard(e, currentCard));
+  const activeInvoiceTotal = activeInvoiceExpenses.reduce((sum, e) => sum + (e.actual_amount || e.predicted_amount || 0), 0);
+  const activeLimit = currentCard.limit_amount || 0;
+  const activeAvailable = activeLimit - activeInvoiceTotal;
+  const activeUsedPct = activeLimit > 0 ? (activeInvoiceTotal / activeLimit) * 100 : 0;
+
+  // Batch import callback
+  const handleBatchImport = (importedList) => {
+    importedList.forEach(item => {
+      onAddExpense({
+        date: item.date || `${selectedMonth}-10`,
+        description: item.description,
+        category_id: categories[0]?.id || 'cat-outros',
+        predicted_amount: item.amount,
+        actual_amount: item.amount,
+        payment_method: 'Cartão de Crédito',
+        card_id: currentCard.id,
+        account_id: accounts[0]?.id || 'acc-jeff',
+        status: 'pendente',
+        notes: 'Importado de extrato/fatura'
+      });
+    });
+    setShowImportModal(false);
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      {/* YNAB Credit Card Method Explanation */}
-      <div className="glass-card" style={{ background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(30, 27, 75, 0.2))', border: '1px solid rgba(79, 70, 229, 0.3)' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.8rem' }}>
-          <ShieldCheck size={24} style={{ color: '#818cf8', flexShrink: 0, marginTop: '0.2rem' }} />
-          <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#c7d2fe' }}>Reserva Automática de Liquidez para Fatura</h3>
-            <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginTop: '0.25rem', lineHeight: 1.5 }}>
-              Cada compra no cartão de crédito <strong>deduz o valor da sua categoria de consumo</strong> e <strong>reserva o mesmo valor para o pagamento da fatura</strong>. Assim, o seu dinheiro permanece 100% seguro na conta e pode render CDI em liquidez diária até a data de vencimento!
-            </p>
-          </div>
+    <div className="manager-container">
+      {/* Header & Card Selector */}
+      <div className="section-header">
+        <div>
+          <h2>Gestão de Cartões de Crédito & Faturas</h2>
+          <p>Acompanhamento de faturas mensais, compras parceladas e limites disponíveis</p>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="btn btn-outline" onClick={() => setShowImportModal(true)}>
+            <UploadCloud size={18} />
+            <span>Importar Fatura (XLS / CSV / OFX)</span>
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowInstallmentForm(true)}>
+            <Layers size={18} />
+            <span>Lançar Compra Parcelada</span>
+          </button>
         </div>
       </div>
 
-      {/* Cards List Grid */}
-      <div className="glass-card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+      {/* Credit Cards Summary Grid */}
+      <div className="cards-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+        {creditCards.map(card => {
+          const invTotal = getCardInvoiceAmount(card);
+          const limit = card.limit_amount || 0;
+          const available = limit - invTotal;
+          const pct = limit > 0 ? (invTotal / limit) * 100 : 0;
+          const isSelected = card.id === (currentCard?.id);
+
+          return (
+            <div
+              key={card.id}
+              onClick={() => setActiveCardId(card.id)}
+              style={{
+                background: `linear-gradient(135deg, ${card.color || '#3b82f6'}22, #0f172a)`,
+                border: isSelected ? `2px solid ${card.color || '#3b82f6'}` : '1px solid var(--border-color, #1e293b)',
+                borderRadius: '16px',
+                padding: '1.25rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                boxShadow: isSelected ? `0 0 15px ${card.color || '#3b82f6'}40` : 'none'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: card.color }}></div>
+                  <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>{card.name}</span>
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn icon-btn-danger"
+                  onClick={(e) => { e.stopPropagation(); onDeleteCard(card.id); }}
+                  title="Excluir Cartão"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.5rem' }}>
+                Fecha dia {card.closing_day} • Vence dia {card.due_day}
+              </div>
+
+              <div style={{ marginBottom: '0.75rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#cbd5e1' }}>Fatura de {selectedMonth}:</div>
+                <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#f8fafc' }}>
+                  {formatCurrency(invTotal)}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.35rem' }}>
+                <span>Disponível: <strong style={{ color: available >= 0 ? '#34d399' : '#f87171' }}>{formatCurrency(available)}</strong></span>
+                <span>Limite: {formatCurrency(limit)}</span>
+              </div>
+
+              <div className="progress-bar-track" style={{ height: '6px' }}>
+                <div
+                  className={`progress-bar-fill ${pct > 100 ? 'progress-danger' : pct >= 80 ? 'progress-warning' : 'progress-normal'}`}
+                  style={{ width: `${Math.min(100, pct)}%` }}
+                ></div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Detailed Invoice View ("Como Uma Fatura Mesmo") */}
+      <div className="dashboard-section-card">
+        <div className="section-card-header">
           <div>
-            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <CreditCard size={22} style={{ color: 'var(--color-indigo)' }} /> Cartões de Crédito & Faturas ZBB
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <FileText size={20} style={{ color: currentCard?.color || '#3b82f6' }} />
+              Fatura Detalhada: {currentCard?.name} ({selectedMonth})
             </h2>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Acompanhamento de cobertura de caixa, limites e compras parceladas.
-            </p>
+            <p>Lista de despesas e compras parceladas lançadas nesta fatura</p>
           </div>
 
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => setShowInstallmentForm(!showInstallmentForm)}
-            style={{ width: 'auto', padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-          >
-            <Layers size={16} /> {showInstallmentForm ? 'Fechar Form' : 'Lançar Compra Parcelada'}
-          </button>
-        </div>
-
-        {/* Form Installment Purchase */}
-        {showInstallmentForm && (
-          <form onSubmit={handleAddInstallmentPurchase} style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '1rem', borderRadius: '14px', border: '1px solid var(--card-border)', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-indigo)' }}>Nova Compra Parcelada (Divisão Automática)</div>
-            <div className="quick-inputs">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div className="month-picker-container">
+              <Calendar size={16} />
               <select
-                className="input-glass"
-                value={instCardId}
-                onChange={(e) => setInstCardId(e.target.value)}
-                required
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth && setSelectedMonth(e.target.value)}
+                className="month-picker-select"
               >
-                <option value="">Selecione o Cartão...</option>
-                {creditCards.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                {MONTHS_LIST.map(m => (
+                  <option key={m.code} value={m.code}>{m.name}</option>
                 ))}
               </select>
+            </div>
+          </div>
+        </div>
 
+        {/* Invoice Summary Banner */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'rgba(15, 23, 42, 0.6)', padding: '1rem', borderRadius: '12px', marginBottom: '1.25rem', border: '1px solid var(--border-color, #1e293b)' }}>
+          <div>
+            <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Total da Fatura</span>
+            <strong style={{ fontSize: '1.25rem', color: '#f8fafc' }}>{formatCurrency(activeInvoiceTotal)}</strong>
+          </div>
+          <div>
+            <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Limite Disponível</span>
+            <strong style={{ fontSize: '1.25rem', color: activeAvailable >= 0 ? '#34d399' : '#f87171' }}>{formatCurrency(activeAvailable)}</strong>
+          </div>
+          <div>
+            <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Uso do Limite</span>
+            <strong style={{ fontSize: '1.25rem', color: activeUsedPct >= 100 ? '#f87171' : activeUsedPct >= 80 ? '#fbbf24' : '#34d399' }}>{activeUsedPct.toFixed(0)}%</strong>
+          </div>
+        </div>
+
+        {/* Invoice Table */}
+        <div className="card-table-container">
+          {activeInvoiceExpenses.length === 0 ? (
+            <div className="empty-state" style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+              <CreditCard size={36} style={{ marginBottom: '0.5rem', opacity: 0.5 }} />
+              <p>Nenhuma despesa ou compra parcelada encontrada para esta fatura em {selectedMonth}.</p>
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Descrição</th>
+                  <th>Categoria</th>
+                  <th>Parcela</th>
+                  <th>Valor da Parcela</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: 'right' }}>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeInvoiceExpenses.map(exp => {
+                  const cat = categories.find(c => c.id === exp.category_id) || { name: 'Outros', color: '#8b5cf6' };
+                  const val = exp.actual_amount || exp.predicted_amount || 0;
+                  const instMatch = exp.description.match(/\((\d+\/\d+)\)/) || exp.notes?.match(/\((\d+\/\d+)\)/);
+                  const instInfo = exp.installment_info || (instMatch ? instMatch[1] : 'À vista');
+
+                  return (
+                    <tr key={exp.id}>
+                      <td>{exp.date ? new Date(exp.date + 'T00:00:00').toLocaleDateString('pt-BR') : '-'}</td>
+                      <td className="font-semibold">{exp.description}</td>
+                      <td>
+                        <span
+                          className="badge-category"
+                          style={{ backgroundColor: `${cat.color}20`, color: cat.color, borderColor: `${cat.color}50` }}
+                        >
+                          {cat.name}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="badge badge-subtle" style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
+                          {instInfo}
+                        </span>
+                      </td>
+                      <td className="text-expense font-bold">{formatCurrency(val)}</td>
+                      <td>
+                        {exp.status === 'ok' ? (
+                          <span className="badge badge-success"><CheckCircle2 size={12} /> Pago</span>
+                        ) : (
+                          <span className="badge badge-warning"><Clock size={12} /> Fatura Aberta</span>
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <button className="icon-btn icon-btn-danger" onClick={() => onDeleteExpense(exp.id)} title="Remover da Fatura">
+                          <Trash2 size={15} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* Form New Credit Card */}
+      <div className="dashboard-section-card" style={{ marginTop: '1.5rem' }}>
+        <h3>Cadastrar Novo Cartão de Crédito</h3>
+        <form onSubmit={handleAddCard} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Nome do Cartão *</label>
               <input
                 type="text"
-                className="input-glass"
-                placeholder="Descrição (ex: Mentoria, Câmera)"
-                value={instDesc}
-                onChange={(e) => setInstDesc(e.target.value)}
                 required
+                placeholder="Ex: Cartão Itaú Personalité, Cartão Nubank..."
+                value={name}
+                onChange={(e) => setName(e.target.value)}
               />
             </div>
-
-            <div className="quick-inputs">
+            <div className="form-group">
+              <label>Limite Total (R$) *</label>
               <input
                 type="number"
                 step="0.01"
-                className="input-glass"
-                placeholder="Valor Total (R$)"
-                value={instTotalAmount}
-                onChange={(e) => setInstTotalAmount(e.target.value)}
                 required
+                placeholder="Ex: 5000.00"
+                value={limitAmount}
+                onChange={(e) => setLimitAmount(e.target.value)}
               />
-
-              <input
-                type="number"
-                min="2"
-                max="48"
-                className="input-glass"
-                placeholder="Nº de Parcelas (ex: 10)"
-                value={instCount}
-                onChange={(e) => setInstCount(e.target.value)}
-                required
-              />
-
-              <select
-                className="input-glass"
-                value={instCategory}
-                onChange={(e) => setInstCategory(e.target.value)}
-              >
-                <option value="lifestyle">Estilo de Vida</option>
-                <option value="essentials">Essencial</option>
-                <option value="savings">Futuro</option>
-              </select>
             </div>
-
-            <button type="submit" className="btn-primary">
-              Gerar {instCount} Parcelas Automáticas
-            </button>
-          </form>
-        )}
-
-        {/* Cards Visual Overview */}
-        {creditCards.length === 0 ? (
-          <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem 0', fontSize: '0.9rem' }}>
-            Nenhum cartão de crédito cadastrado. Cadastre seu cartão Credicard ou Bradesco abaixo.
-          </div>
-        ) : (
-          <div className="cards-grid-3">
-            {creditCards.map(card => {
-              const currentInvoice = getCardCurrentInvoice(card.id);
-              const limit = Number(card.limit_amount) || 0;
-              const available = limit - currentInvoice;
-              const usedPercent = limit > 0 ? (currentInvoice / limit) * 100 : 0;
-              const { daysUntilDue, estimatedYield } = calculateCdiArbitrage(currentInvoice, card.due_day);
-              
-              // In ZBB, reserved cash matches current invoice spending if covered
-              const reservedCash = Number(card.reserved_cash) || currentInvoice;
-              const isFullyCovered = reservedCash >= currentInvoice;
-
-              return (
-                <div key={card.id} className="credit-card-widget" style={{ background: `linear-gradient(135deg, ${card.color || '#312e81'}, #0f172a)` }}>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '1.1rem' }}>{card.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteCard(card.id)}
-                        style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                    <div style={{ fontSize: '0.75rem', opacity: 0.8, marginTop: '0.2rem' }}>
-                      Fecha dia {card.closing_day} • Vence dia {card.due_day}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Fatura Atual</div>
-                    <div style={{ fontSize: '1.6rem', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>
-                      R$ {currentInvoice.toFixed(2)}
-                    </div>
-                  </div>
-
-                  {/* Liquidity Coverage Badge */}
-                  <div style={{
-                    background: isFullyCovered ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                    border: isFullyCovered ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(239, 68, 68, 0.4)',
-                    padding: '0.5rem 0.75rem',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.2rem'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600 }}>
-                      <span style={{ color: isFullyCovered ? '#34d399' : '#f87171', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                        {isFullyCovered ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
-                        {isFullyCovered ? 'Fatura 100% Coberta' : 'Atenção: Sobregasto!'}
-                      </span>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Reserva: R$ {reservedCash.toFixed(2)}</span>
-                    </div>
-
-                    {currentInvoice > 0 && (
-                      <div style={{ fontSize: '0.7rem', color: '#a7f3d0', display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.1rem' }}>
-                        <TrendingUp size={12} /> Rendimento CDI estimado ({daysUntilDue} dias): +R$ {estimatedYield.toFixed(2)}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', opacity: 0.8, marginBottom: '0.3rem' }}>
-                      <span>Disp: R$ {available.toFixed(2)}</span>
-                      <span>Limite: R$ {limit.toFixed(2)}</span>
-                    </div>
-                    <div className="progress-bar-bg" style={{ height: '6px' }}>
-                      <div
-                        className="progress-bar-fill lifestyle"
-                        style={{ width: `${Math.min(100, usedPercent)}%`, background: usedPercent > 90 ? '#ef4444' : '#f59e0b' }}
-                      ></div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Add New Card Form */}
-      <div className="glass-card">
-        <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1rem', fontWeight: 600, marginBottom: '1rem' }}>
-          Cadastrar Novo Cartão de Crédito
-        </h3>
-
-        <form onSubmit={handleAddCard} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <div className="quick-inputs">
-            <input
-              type="text"
-              className="input-glass"
-              placeholder="Nome do Cartão (ex: Credicard Black, Bradesco)"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-            <input
-              type="number"
-              step="0.01"
-              className="input-glass"
-              placeholder="Limite Total (R$)"
-              value={limitAmount}
-              onChange={(e) => setLimitAmount(e.target.value)}
-              required
-            />
           </div>
 
-          <div className="quick-inputs">
-            <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.2rem' }}>Dia do Fechamento</label>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Dia do Fechamento da Fatura</label>
               <input
                 type="number"
                 min="1"
                 max="31"
-                className="input-glass"
                 value={closingDay}
                 onChange={(e) => setClosingDay(e.target.value)}
-                required
               />
             </div>
-
-            <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.2rem' }}>Dia do Vencimento</label>
+            <div className="form-group">
+              <label>Dia do Vencimento da Fatura</label>
               <input
                 type="number"
                 min="1"
                 max="31"
-                className="input-glass"
                 value={dueDay}
                 onChange={(e) => setDueDay(e.target.value)}
-                required
               />
             </div>
-
-            <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.2rem' }}>Cor de Destaque</label>
+            <div className="form-group">
+              <label>Cor de Identificação</label>
               <input
                 type="color"
-                className="input-glass"
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
-                style={{ padding: '0.2rem', height: '42px', cursor: 'pointer' }}
+                style={{ height: '42px', padding: '2px', cursor: 'pointer', width: '100%' }}
               />
             </div>
           </div>
 
-          <button type="submit" className="btn-primary" style={{ marginTop: '0.5rem' }}>
-            <Plus size={18} /> Salvar Novo Cartão
-          </button>
+          <div className="modal-actions" style={{ marginTop: '0.5rem' }}>
+            <button type="submit" className="btn btn-primary">
+              <Plus size={18} /> Salvar Novo Cartão
+            </button>
+          </div>
         </form>
       </div>
+
+      {/* Modal: Installment Purchase */}
+      {showInstallmentForm && (
+        <div className="modal-backdrop">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3>Lançar Compra Parcelada no Cartão</h3>
+              <button className="close-btn" onClick={() => setShowInstallmentForm(false)}>&times;</button>
+            </div>
+            <form onSubmit={handleAddInstallmentPurchase}>
+              <div className="form-group">
+                <label>Cartão de Crédito *</label>
+                <select
+                  value={instCardId || currentCard.id}
+                  onChange={(e) => setInstCardId(e.target.value)}
+                >
+                  {creditCards.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Descrição da Compra *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Notebook, Smartphone, Seguro..."
+                  value={instDesc}
+                  onChange={(e) => setInstDesc(e.target.value)}
+                />
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Valor Total da Compra (R$) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="Ex: 1200.00"
+                    value={instTotalAmount}
+                    onChange={(e) => setInstTotalAmount(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Quantidade de Parcelas *</label>
+                  <input
+                    type="number"
+                    min="2"
+                    max="48"
+                    required
+                    value={instCount}
+                    onChange={(e) => setInstCount(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Categoria *</label>
+                <select
+                  value={instCategoryId}
+                  onChange={(e) => setInstCategoryId(e.target.value)}
+                >
+                  {categories.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '0.75rem', borderRadius: '8px', fontSize: '0.825rem', color: '#93c5fd', marginBottom: '1rem' }}>
+                💡 O valor total de {formatCurrency(parseFloat(instTotalAmount || 0))} será dividido em {instCount || 1}x de {formatCurrency(parseFloat(instTotalAmount || 0) / parseInt(instCount || 1, 10))} por mês automaticamente nas faturas seguintes.
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowInstallmentForm(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Gerar Parcelamento
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: File Importer */}
+      {showImportModal && (
+        <div className="modal-backdrop">
+          <div className="modal-content" style={{ maxWidth: '750px' }}>
+            <div className="modal-header">
+              <h3>Importar Fatura / Extrato do Cartão</h3>
+              <button className="close-btn" onClick={() => setShowImportModal(false)}>&times;</button>
+            </div>
+            <FileImporter
+              creditCards={creditCards}
+              customCategories={categories}
+              onBatchImport={handleBatchImport}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
