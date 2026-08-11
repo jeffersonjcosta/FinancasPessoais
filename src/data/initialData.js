@@ -21,6 +21,27 @@ export const INITIAL_ACCOUNTS = [
   }
 ];
 
+export const INITIAL_CREDIT_CARDS = [
+  {
+    "id": "card-credicard",
+    "name": "Cartão Credicard",
+    "limit_amount": 1700.0,
+    "closing_day": 15,
+    "due_day": 24,
+    "color": "#3b82f6",
+    "reserved_cash": 0
+  },
+  {
+    "id": "card-bradesco",
+    "name": "Cartão Bradesco",
+    "limit_amount": 2250.0,
+    "closing_day": 15,
+    "due_day": 24,
+    "color": "#dc2626",
+    "reserved_cash": 0
+  }
+];
+
 export const INITIAL_CATEGORIES = [
   {
     "id": "cat-alimentacao",

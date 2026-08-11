@@ -1,11 +1,12 @@
 import React from 'react';
-import { LayoutDashboard, TrendingUp, TrendingDown, Landmark, Tag } from 'lucide-react';
+import { LayoutDashboard, TrendingUp, TrendingDown, Landmark, Tag, CreditCard } from 'lucide-react';
 
 export default function Navbar({ activeTab, setActiveTab }) {
   const navItems = [
     { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
     { id: 'receitas', label: 'Receitas', icon: TrendingUp },
     { id: 'despesas', label: 'Despesas', icon: TrendingDown },
+    { id: 'cartoes', label: 'Cartões', icon: CreditCard },
     { id: 'contas', label: 'Contas', icon: Landmark },
     { id: 'categorias', label: 'Categorias', icon: Tag },
   ];
