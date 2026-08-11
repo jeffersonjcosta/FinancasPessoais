@@ -23,6 +23,7 @@ import {
   TrendingDown,
   Landmark,
   Tag,
+  CreditCard,
   LogOut,
   RotateCcw
 } from 'lucide-react';
@@ -221,6 +222,7 @@ export default function App() {
     { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
     { id: 'receitas', label: 'Receitas', icon: TrendingUp },
     { id: 'despesas', label: 'Despesas', icon: TrendingDown },
+    { id: 'cartoes', label: 'Cartões', icon: CreditCard },
     { id: 'contas', label: 'Contas', icon: Landmark },
     { id: 'categorias', label: 'Categorias', icon: Tag },
   ];
