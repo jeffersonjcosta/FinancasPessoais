@@ -17,9 +17,16 @@ export default function ExpensesManager({
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [accountFilter, setAccountFilter] = useState('all');
 
-  const PAYMENT_METHODS = [
+  const isCreditCardPayment = (pm) => {
+    if (!pm) return false;
+    const lower = pm.toLowerCase();
+    return lower.includes('cartão') || lower.includes('cartao') || lower.includes('credit');
+  };
+
+  const dynamicPaymentMethods = [
     'PIX',
     'Cartão de Crédito',
+    ...creditCards.map(c => `Cartão de Crédito - ${c.name}`),
     'Dinheiro',
     'Débito',
     'Transferência Bancária'
@@ -82,6 +89,9 @@ export default function ExpensesManager({
     const baseAmount = parseFloat(formData.actual_amount || formData.predicted_amount || 0);
     const instCount = parseInt(formData.installments || '1', 10);
 
+    const isCredit = isCreditCardPayment(formData.payment_method);
+    const targetCardId = formData.card_id || creditCards[0]?.id || null;
+
     if (editingExpense) {
       const payload = {
         date: formData.date,
@@ -89,15 +99,15 @@ export default function ExpensesManager({
         category_id: formData.category_id,
         predicted_amount: parseFloat(formData.predicted_amount || 0),
         actual_amount: baseAmount,
-        payment_method: formData.payment_method,
-        card_id: formData.payment_method === 'Cartão de Crédito' ? formData.card_id : null,
+        payment_method: 'Cartão de Crédito',
+        card_id: isCredit ? targetCardId : null,
         account_id: formData.account_id,
         status: formData.status,
         notes: formData.notes
       };
       onUpdateExpense(editingExpense.id, payload);
     } else {
-      if (formData.payment_method === 'Cartão de Crédito' && instCount > 1) {
+      if (isCredit && instCount > 1) {
         const monthlyVal = parseFloat((baseAmount / instCount).toFixed(2));
         const [yStr, mStr, dStr] = formData.date.split('-');
         let startYear = parseInt(yStr, 10);
@@ -118,7 +128,7 @@ export default function ExpensesManager({
             predicted_amount: monthlyVal,
             actual_amount: monthlyVal,
             payment_method: 'Cartão de Crédito',
-            card_id: formData.card_id,
+            card_id: targetCardId,
             installment_info: `${i + 1}/${instCount}`,
             account_id: formData.account_id,
             status: formData.status,
@@ -132,8 +142,8 @@ export default function ExpensesManager({
           category_id: formData.category_id,
           predicted_amount: parseFloat(formData.predicted_amount || 0),
           actual_amount: baseAmount,
-          payment_method: formData.payment_method,
-          card_id: formData.payment_method === 'Cartão de Crédito' ? formData.card_id : null,
+          payment_method: isCredit ? 'Cartão de Crédito' : formData.payment_method,
+          card_id: isCredit ? targetCardId : null,
           account_id: formData.account_id,
           status: formData.status,
           notes: formData.notes
@@ -350,12 +360,22 @@ export default function ExpensesManager({
 
               <div className="form-row">
                 <div className="form-group">
-                  <label>Forma de Pagamento</label>
+                  <label>Forma de Pagamento *</label>
                   <select
                     value={formData.payment_method}
-                    onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      let cardId = formData.card_id;
+                      const matchedCard = creditCards.find(c => val.includes(c.name));
+                      if (matchedCard) {
+                        cardId = matchedCard.id;
+                      } else if (!cardId && creditCards.length > 0) {
+                        cardId = creditCards[0].id;
+                      }
+                      setFormData({ ...formData, payment_method: val, card_id: cardId });
+                    }}
                   >
-                    {PAYMENT_METHODS.map(pm => (
+                    {dynamicPaymentMethods.map(pm => (
                       <option key={pm} value={pm}>{pm}</option>
                     ))}
                   </select>
@@ -374,15 +394,15 @@ export default function ExpensesManager({
                 </div>
               </div>
 
-              {formData.payment_method === 'Cartão de Crédito' && (
-                <div className="form-row" style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.3)', marginBottom: '1rem' }}>
+              {isCreditCardPayment(formData.payment_method) && (
+                <div className="form-row" style={{ background: 'rgba(59, 130, 246, 0.12)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(59, 130, 246, 0.35)', marginBottom: '1rem' }}>
                   <div className="form-group">
-                    <label style={{ color: '#93c5fd' }}>Selecione o Cartão *</label>
+                    <label style={{ color: '#93c5fd', fontWeight: 600 }}>Cartão de Crédito para Lançamento da Fatura *</label>
                     <select
-                      value={formData.card_id}
+                      value={formData.card_id || creditCards[0]?.id || ''}
                       onChange={(e) => setFormData({ ...formData, card_id: e.target.value })}
                     >
-                      <option value="">Selecione um cartão...</option>
+                      <option value="">Selecione o Cartão...</option>
                       {creditCards.map(card => (
                         <option key={card.id} value={card.id}>{card.name}</option>
                       ))}
@@ -391,7 +411,7 @@ export default function ExpensesManager({
 
                   {!editingExpense && (
                     <div className="form-group">
-                      <label style={{ color: '#93c5fd' }}>Parcelas (1x até 48x)</label>
+                      <label style={{ color: '#93c5fd', fontWeight: 600 }}>Nº de Parcelas (1x até 48x)</label>
                       <input
                         type="number"
                         min="1"
