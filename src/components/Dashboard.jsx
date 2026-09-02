@@ -13,6 +13,16 @@ import {
   ShieldCheck,
   CreditCard
 } from 'lucide-react';
+import {
+  MONTHS_LIST,
+  formatCurrency,
+  formatDateBR,
+  isInMonth,
+  isCardPurchase,
+  isInvoicePayment,
+  isCashFlowExpense,
+  getDueDate
+} from '../utils/finance';
 
 export default function Dashboard({
   incomes,
@@ -24,42 +34,36 @@ export default function Dashboard({
   setSelectedMonth,
   onNavigate
 }) {
-  const MONTHS_LIST = [
-    { code: '2026-01', name: 'Janeiro 2026' },
-    { code: '2026-02', name: 'Fevereiro 2026' },
-    { code: '2026-03', name: 'Março 2026' },
-    { code: '2026-04', name: 'Abril 2026' },
-    { code: '2026-05', name: 'Maio 2026' },
-    { code: '2026-06', name: 'Junho 2026' },
-    { code: '2026-07', name: 'Julho 2026' },
-    { code: '2026-08', name: 'Agosto 2026' },
-    { code: '2026-09', name: 'Setembro 2026' },
-    { code: '2026-10', name: 'Outubro 2026' },
-    { code: '2026-11', name: 'Novembro 2026' },
-    { code: '2026-12', name: 'Dezembro 2026' },
-  ];
-
-  // Filter for selected month
+  // Filtro do mês: compras no cartão contam no mês da FATURA (dia de fechamento), o resto pela data.
   const monthIncomes = incomes.filter(i => i.date && i.date.startsWith(selectedMonth));
-  const monthExpenses = expenses.filter(e => e.date && e.date.startsWith(selectedMonth));
+  const monthExpenses = expenses.filter(e => isInMonth(e, selectedMonth, creditCards));
+
+  // Fluxo de caixa: o que sai da conta no mês. Compras no cartão entram pela linha de pagamento da fatura.
+  const cashExpenses = monthExpenses.filter(isCashFlowExpense);
+  const cardPurchases = monthExpenses.filter(isCardPurchase);
 
   // Income calculations
   const predictedIncome = monthIncomes.reduce((sum, i) => sum + (i.predicted_amount || 0), 0);
   const actualIncome = monthIncomes.reduce((sum, i) => sum + (i.actual_amount || 0), 0);
 
-  // Expense calculations
-  const predictedExpense = monthExpenses.reduce((sum, e) => sum + (e.predicted_amount || 0), 0);
-  const actualExpense = monthExpenses.reduce((sum, e) => sum + (e.actual_amount || 0), 0);
+  // Expense calculations (caixa)
+  const predictedExpense = cashExpenses.reduce((sum, e) => sum + (e.predicted_amount || 0), 0);
+  const actualExpense = cashExpenses.reduce((sum, e) => sum + (e.actual_amount || 0), 0);
 
   // Balance
   const netBalanceActual = actualIncome - actualExpense;
   const netBalancePredicted = predictedIncome - predictedExpense;
 
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
-  };
+  // Reservas (contas tipo 'reserva'): saldo acumulado, sem filtro de mês
+  const reserveAccounts = accounts.filter(a => a.type === 'reserva');
+  const movementAccounts = accounts.filter(a => a.type !== 'reserva');
+  const getReserveBalance = (acc) =>
+    (acc.initial_balance || 0)
+    + incomes.filter(i => i.account_id === acc.id).reduce((s, i) => s + (i.actual_amount || 0), 0)
+    - expenses.filter(e => e.account_id === acc.id && isCashFlowExpense(e)).reduce((s, e) => s + (e.actual_amount || 0), 0);
+  const totalReserves = reserveAccounts.reduce((s, a) => s + getReserveBalance(a), 0);
 
-  // Category thermometer & warning alerts calculation
+  // Termômetro por categoria: inclui compras no cartão (pela categoria) e as linhas de fatura em "Cartões"
   const categoryStats = categories.map(cat => {
     const catExpenses = monthExpenses.filter(e => e.category_id === cat.id);
     const spent = catExpenses.reduce((sum, e) => sum + (e.actual_amount || 0), 0);
@@ -83,19 +87,11 @@ export default function Dashboard({
 
   const alerts = categoryStats.filter(c => c.status === 'exceeded' || c.status === 'warning');
 
-  // Credit Cards stats calculation
+  // Cartões: compras da fatura do mês + situação da linha de pagamento da fatura
   const cardStats = creditCards.map(card => {
-    const cardExpenses = monthExpenses.filter(exp => {
-      if (exp.card_id && exp.card_id === card.id) return true;
-      const isCredit = exp.payment_method === 'Cartão de Crédito' || (exp.category_id && exp.category_id.includes('cartao'));
-      const d = (exp.description || '').toLowerCase();
-      const c = (card.name || '').toLowerCase();
-      if (c.includes('credicard') && (d.includes('credicard') || exp.category_id === 'cat-credicard')) return true;
-      if (c.includes('bradesco') && (d.includes('bradesco') || exp.category_id === 'cat-bradesco')) return true;
-      return isCredit && (!exp.card_id || exp.card_id === card.id);
-    });
-
-    const spent = cardExpenses.reduce((sum, e) => sum + (e.actual_amount || e.predicted_amount || 0), 0);
+    const purchases = cardPurchases.filter(e => e.card_id === card.id);
+    const spent = purchases.reduce((sum, e) => sum + (e.actual_amount || e.predicted_amount || 0), 0);
+    const invoiceLine = cashExpenses.find(e => isInvoicePayment(e) && e.card_id === card.id);
     const limit = card.limit_amount || 0;
     const rawPct = limit > 0 ? (spent / limit) * 100 : 0;
 
@@ -103,17 +99,25 @@ export default function Dashboard({
     if (rawPct > 100) status = 'exceeded';
     else if (rawPct >= 80) status = 'warning';
 
+    let paymentStatus = 'missing';
+    if (invoiceLine && invoiceLine.status === 'ok') paymentStatus = 'paid';
+    else if (invoiceLine) paymentStatus = 'pending';
+
     return {
       ...card,
       spent,
       limit,
+      invoiceLine,
+      purchasesCount: purchases.length,
+      paymentStatus,
+      dueDate: getDueDate(selectedMonth, card.due_day),
       percentage: Math.min(rawPct, 100),
       rawPct,
       status
     };
   });
 
-  const cardAlerts = cardStats.filter(c => c.status === 'exceeded' || c.status === 'warning');
+  const invoicesWithActivity = cardStats.filter(c => c.purchasesCount > 0 || c.invoiceLine);
 
   return (
     <div className="dashboard-container">
@@ -174,28 +178,60 @@ export default function Dashboard({
             <span>Saldo Previsto: {formatCurrency(netBalancePredicted)}</span>
           </div>
         </div>
-      </div>
 
-      {/* Credit Cards Alerts Banner */}
-      {cardAlerts.length > 0 && (
-        <div className="alerts-callout-banner" style={{ borderLeftColor: '#ef4444' }}>
-          <div className="alerts-callout-header">
-            <CreditCard size={22} className="text-expense" />
-            <div>
-              <h3>Aviso de Limites de Cartões de Crédito ({cardAlerts.length})</h3>
-              <p>Cartões que atingiram 80% ou ultrapassaram o limite cadastrado em {selectedMonth}:</p>
+        {reserveAccounts.length > 0 && (
+          <div className="kpi-card kpi-balance">
+            <div className="kpi-header">
+              <span className="kpi-title">Reservas</span>
+              <div className="kpi-icon-badge icon-balance"><ShieldCheck size={20} /></div>
+            </div>
+            <div className="kpi-value text-income">{formatCurrency(totalReserves)}</div>
+            <div className="kpi-subtext">
+              <span>{reserveAccounts.map(a => `${a.name}: ${formatCurrency(getReserveBalance(a))}`).join(' • ')}</span>
             </div>
           </div>
-          <div className="alerts-list">
-            {cardAlerts.map(card => (
-              <div key={card.id} className={`alert-item-pill ${card.status === 'exceeded' ? 'pill-danger' : 'pill-warning'}`}>
-                <span className="font-semibold">{card.name}:</span>
-                <span>Fatura {formatCurrency(card.spent)} de {formatCurrency(card.limit)} ({card.rawPct.toFixed(0)}%)</span>
-                {card.status === 'exceeded' ? (
-                  <span className="badge badge-danger">Limite Excedido</span>
-                ) : (
-                  <span className="badge badge-warning">Atenção (80%+)</span>
-                )}
+        )}
+      </div>
+
+      {/* Faturas de cartão do mês */}
+      {invoicesWithActivity.length > 0 && (
+        <div className="dashboard-section-card">
+          <div className="section-card-header">
+            <div>
+              <h2>Faturas de Cartão em {selectedMonth}</h2>
+              <p>Compras que caem na fatura deste mês (pelo dia de fechamento) e situação do pagamento</p>
+            </div>
+            <button className="btn btn-outline" onClick={() => onNavigate('cartoes')}>
+              <span>Ver Cartões</span>
+              <ArrowRight size={16} />
+            </button>
+          </div>
+
+          <div className="accounts-summary-row">
+            {invoicesWithActivity.map(card => (
+              <div key={card.id} className="account-mini-card" style={{ borderLeft: `4px solid ${card.color || '#3b82f6'}` }}>
+                <div className="mini-card-header">
+                  <CreditCard size={18} className="text-secondary" />
+                  <span className="font-semibold">{card.name}</span>
+                </div>
+                <div className="mini-card-balance text-expense">{formatCurrency(card.spent)}</div>
+                <div className="mini-card-details" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.3rem' }}>
+                  <span className="text-xs text-secondary">
+                    {card.purchasesCount} compra{card.purchasesCount !== 1 ? 's' : ''} • vence {formatDateBR(card.dueDate)}
+                  </span>
+                  {card.paymentStatus === 'paid' && (
+                    <span className="badge badge-success">Fatura paga: {formatCurrency(card.invoiceLine.actual_amount)}</span>
+                  )}
+                  {card.paymentStatus === 'pending' && (
+                    <span className="badge badge-warning">Pagamento previsto: {formatCurrency(card.invoiceLine.predicted_amount)}</span>
+                  )}
+                  {card.paymentStatus === 'missing' && (
+                    <span className="badge badge-danger">Pagamento da fatura não lançado</span>
+                  )}
+                  {card.status !== 'normal' && (
+                    <span className="text-xs text-expense">{card.rawPct.toFixed(0)}% do limite de {formatCurrency(card.limit)}</span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -300,9 +336,9 @@ export default function Dashboard({
         </div>
 
         <div className="accounts-summary-row">
-          {accounts.map(acc => {
+          {movementAccounts.map(acc => {
             const accIncomes = monthIncomes.filter(i => i.account_id === acc.id).reduce((s, i) => s + (i.actual_amount || 0), 0);
-            const accExpenses = monthExpenses.filter(e => e.account_id === acc.id).reduce((s, e) => s + (e.actual_amount || 0), 0);
+            const accExpenses = cashExpenses.filter(e => e.account_id === acc.id).reduce((s, e) => s + (e.actual_amount || 0), 0);
             const balance = (acc.initial_balance || 0) + accIncomes - accExpenses;
 
             return (

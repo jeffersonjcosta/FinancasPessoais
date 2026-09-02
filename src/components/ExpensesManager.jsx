@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, Trash2, Edit2, CheckCircle2, Clock, Search, Filter, CreditCard } from 'lucide-react';
+import { isInMonth, isCardPurchase, isCashFlowExpense } from '../utils/finance';
 
 export default function ExpensesManager({
   expenses,
@@ -99,8 +100,8 @@ export default function ExpensesManager({
         category_id: formData.category_id,
         predicted_amount: parseFloat(formData.predicted_amount || 0),
         actual_amount: baseAmount,
-        payment_method: 'Cartão de Crédito',
-        card_id: isCredit ? targetCardId : null,
+        payment_method: isCredit ? 'Cartão de Crédito' : formData.payment_method,
+        card_id: isCredit ? targetCardId : (editingExpense.is_invoice_payment ? editingExpense.card_id : null),
         account_id: formData.account_id,
         status: formData.status,
         notes: formData.notes
@@ -154,17 +155,24 @@ export default function ExpensesManager({
     setShowModal(false);
   };
 
-  // Filter expenses by selected month (YYYY-MM), category, account, search
+  // Compras no cartão ficam na aba Cartões (contam no mês da fatura); aqui aparecem só se o usuário pedir
+  const [showCardPurchases, setShowCardPurchases] = useState(false);
+  const cardPurchasesCount = expenses.filter(e => isInMonth(e, selectedMonth, creditCards) && isCardPurchase(e)).length;
+
+  // Filter expenses by effective month (YYYY-MM), category, account, search
   const monthExpenses = expenses.filter(exp => {
-    const matchesMonth = exp.date && exp.date.startsWith(selectedMonth);
+    const matchesMonth = isInMonth(exp, selectedMonth, creditCards);
+    if (!showCardPurchases && isCardPurchase(exp)) return false;
     const matchesCat = categoryFilter === 'all' || exp.category_id === categoryFilter;
     const matchesAcc = accountFilter === 'all' || exp.account_id === accountFilter;
     const matchesSearch = !searchTerm || exp.description.toLowerCase().includes(searchTerm.toLowerCase()) || (exp.notes && exp.notes.toLowerCase().includes(searchTerm.toLowerCase()));
     return matchesMonth && matchesCat && matchesAcc && matchesSearch;
   });
 
-  const totalPredicted = monthExpenses.reduce((acc, e) => acc + (e.predicted_amount || 0), 0);
-  const totalActual = monthExpenses.reduce((acc, e) => acc + (e.actual_amount || 0), 0);
+  // Totais de caixa (sem compras no cartão: a fatura já as representa)
+  const cashMonthExpenses = monthExpenses.filter(isCashFlowExpense);
+  const totalPredicted = cashMonthExpenses.reduce((acc, e) => acc + (e.predicted_amount || 0), 0);
+  const totalActual = cashMonthExpenses.reduce((acc, e) => acc + (e.actual_amount || 0), 0);
 
   const formatCurrency = (val) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
@@ -196,16 +204,17 @@ export default function ExpensesManager({
       {/* Summary Cards */}
       <div className="metrics-grid">
         <div className="metric-card metric-expense">
-          <span className="metric-label">Previsão de Despesas ({selectedMonth})</span>
+          <span className="metric-label">Previsão de Saídas da Conta ({selectedMonth})</span>
           <span className="metric-value">{formatCurrency(totalPredicted)}</span>
         </div>
         <div className="metric-card metric-expense">
-          <span className="metric-label">Despesas Realizadas ({selectedMonth})</span>
+          <span className="metric-label">Saídas Realizadas ({selectedMonth})</span>
           <span className="metric-value">{formatCurrency(totalActual)}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Lançamentos no Mês</span>
-          <span className="metric-value">{monthExpenses.length} despesas</span>
+          <span className="metric-value">{cashMonthExpenses.length} despesas</span>
+          <span className="text-xs text-secondary">+ {cardPurchasesCount} compra{cardPurchasesCount !== 1 ? 's' : ''} no cartão (aba Cartões)</span>
         </div>
       </div>
 
@@ -240,6 +249,15 @@ export default function ExpensesManager({
             ))}
           </select>
         </div>
+
+        <label className="filter-select-wrapper" style={{ cursor: 'pointer', gap: '0.5rem' }}>
+          <input
+            type="checkbox"
+            checked={showCardPurchases}
+            onChange={(e) => setShowCardPurchases(e.target.checked)}
+          />
+          <span style={{ fontSize: '0.85rem' }}>Mostrar compras no cartão ({cardPurchasesCount})</span>
+        </label>
       </div>
 
       {/* Table */}

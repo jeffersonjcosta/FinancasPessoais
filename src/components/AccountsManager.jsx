@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Edit2, Wallet, Landmark, Building, DollarSign } from 'lucide-react';
+import { Plus, Trash2, Edit2, Wallet, Landmark, Building, PiggyBank } from 'lucide-react';
+import { formatCurrency, isCashFlowExpense } from '../utils/finance';
 
 export default function AccountsManager({
   accounts,
@@ -15,12 +16,13 @@ export default function AccountsManager({
   const [formData, setFormData] = useState({
     name: '',
     initial_balance: 0,
-    icon: 'Landmark'
+    icon: 'Landmark',
+    type: 'movimentacao'
   });
 
   const handleOpenAdd = () => {
     setEditingAccount(null);
-    setFormData({ name: '', initial_balance: 0, icon: 'Landmark' });
+    setFormData({ name: '', initial_balance: 0, icon: 'Landmark', type: 'movimentacao' });
     setShowModal(true);
   };
 
@@ -29,7 +31,8 @@ export default function AccountsManager({
     setFormData({
       name: acc.name,
       initial_balance: acc.initial_balance || 0,
-      icon: acc.icon || 'Landmark'
+      icon: acc.icon || 'Landmark',
+      type: acc.type || 'movimentacao'
     });
     setShowModal(true);
   };
@@ -42,34 +45,36 @@ export default function AccountsManager({
       onUpdateAccount(editingAccount.id, {
         name: formData.name,
         initial_balance: parseFloat(formData.initial_balance || 0),
-        icon: formData.icon
+        icon: formData.icon,
+        type: formData.type
       });
     } else {
       onAddAccount({
         name: formData.name,
         initial_balance: parseFloat(formData.initial_balance || 0),
-        icon: formData.icon
+        icon: formData.icon,
+        type: formData.type
       });
     }
     setShowModal(false);
-  };
-
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
   };
 
   const getAccountIcon = (iconName) => {
     switch (iconName) {
       case 'Wallet': return <Wallet size={24} />;
       case 'Building': return <Building size={24} />;
+      case 'PiggyBank': return <PiggyBank size={24} />;
       default: return <Landmark size={24} />;
     }
   };
 
   // Compute calculated balance for each account in selected month or overall
-  const getAccountStats = (accId) => {
-    const accIncomes = incomes.filter(i => i.account_id === accId && i.date && i.date.startsWith(selectedMonth));
-    const accExpenses = expenses.filter(e => e.account_id === accId && e.date && e.date.startsWith(selectedMonth));
+  // Reservas: saldo acumulado (todas as datas). Movimentação: só o mês selecionado.
+  // Compras no cartão não saem da conta (a fatura sai), por isso ficam de fora.
+  const getAccountStats = (accId, isReserve = false) => {
+    const inScope = (d) => isReserve || (d && d.startsWith(selectedMonth));
+    const accIncomes = incomes.filter(i => i.account_id === accId && inScope(i.date));
+    const accExpenses = expenses.filter(e => e.account_id === accId && isCashFlowExpense(e) && inScope(e.date));
 
     const totalIncome = accIncomes.reduce((sum, i) => sum + (i.actual_amount || 0), 0);
     const totalExpense = accExpenses.reduce((sum, e) => sum + (e.actual_amount || 0), 0);
@@ -93,8 +98,9 @@ export default function AccountsManager({
 
       {/* Account Cards Grid */}
       <div className="accounts-cards-grid">
-        {accounts.map(acc => {
-          const { totalIncome, totalExpense, netMonth } = getAccountStats(acc.id);
+        {[...accounts].sort((a, b) => (a.type === 'reserva') - (b.type === 'reserva')).map(acc => {
+          const isReserve = acc.type === 'reserva';
+          const { totalIncome, totalExpense, netMonth } = getAccountStats(acc.id, isReserve);
           const currentBalance = (acc.initial_balance || 0) + netMonth;
 
           return (
@@ -105,7 +111,7 @@ export default function AccountsManager({
                 </div>
                 <div className="account-card-title">
                   <h3>{acc.name}</h3>
-                  <span className="text-secondary text-sm">Saldo no Mês ({selectedMonth})</span>
+                  <span className="text-secondary text-sm">{isReserve ? 'Reserva / Investimento' : `Saldo no Mês (${selectedMonth})`}</span>
                 </div>
                 <div className="actions-cell">
                   <button className="icon-btn" onClick={() => handleOpenEdit(acc)} title="Editar">
@@ -121,7 +127,7 @@ export default function AccountsManager({
 
               <div className="account-card-body">
                 <div className="account-balance-main">
-                  <span className="balance-label">Saldo em Movimentação</span>
+                  <span className="balance-label">{isReserve ? 'Saldo da Reserva' : 'Saldo em Movimentação'}</span>
                   <span className={`balance-value ${currentBalance >= 0 ? 'text-income' : 'text-expense'}`}>
                     {formatCurrency(currentBalance)}
                   </span>
@@ -183,6 +189,18 @@ export default function AccountsManager({
                   <option value="Landmark">Banco / Conta Corrente</option>
                   <option value="Wallet">Carteira / Dinheiro</option>
                   <option value="Building">Empresa / Outra Conta</option>
+                  <option value="PiggyBank">Reserva / Investimento</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Tipo</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                >
+                  <option value="movimentacao">Conta de movimentação (entra e sai no mês)</option>
+                  <option value="reserva">Reserva / Investimento (saldo acumulado)</option>
                 </select>
               </div>
 

@@ -1,14 +1,20 @@
 import React, { useState } from 'react';
-import { supabase, isSupabaseConfigured } from '../supabaseClient';
-import { ShieldCheck, LogIn, UserPlus, AlertCircle } from 'lucide-react';
+import { supabase, isSupabaseConfigured, getSupabaseConfig } from '../supabaseClient';
+import { ShieldCheck, LogIn, UserPlus, AlertCircle, Settings, HardDrive, Key, Check } from 'lucide-react';
 
-export default function Auth({ onLoginSuccess }) {
+export default function Auth({ onLoginSuccess, onUseLocalMode }) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
+  const [showConfig, setShowConfig] = useState(false);
+
+  const currentConfig = getSupabaseConfig();
+  const [customUrl, setCustomUrl] = useState(localStorage.getItem('CUSTOM_SUPABASE_URL') || currentConfig.supabaseUrl || '');
+  const [customKey, setCustomKey] = useState(localStorage.getItem('CUSTOM_SUPABASE_ANON_KEY') || currentConfig.supabaseAnonKey || '');
+  const [configSavedMsg, setConfigSavedMsg] = useState('');
 
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -17,8 +23,9 @@ export default function Auth({ onLoginSuccess }) {
     setInfoMsg('');
 
     if (!isSupabaseConfigured()) {
-      setErrorMsg('O Supabase ainda não foi configurado! Configure as chaves nas variáveis de ambiente ou na tela de Ajustes.');
+      setErrorMsg('O Supabase ainda não foi configurado! Insira as chaves do seu projeto abaixo.');
       setLoading(false);
+      setShowConfig(true);
       return;
     }
 
@@ -38,104 +45,181 @@ export default function Auth({ onLoginSuccess }) {
           password,
         });
         if (error) throw error;
-        setInfoMsg('Cadastro realizado! Se a confirmação por e-mail estiver ativa, verifique sua caixa de entrada, caso contrário, faça login.');
+        setInfoMsg('Cadastro realizado com sucesso! Se a confirmação por e-mail estiver ativa, verifique sua caixa de entrada, caso contrário faça login.');
         setIsLogin(true);
       }
     } catch (err) {
-      setErrorMsg(err.message || 'Erro ao realizar autenticação.');
+      const msg = err.message || '';
+      if (msg.includes('Failed to fetch') || msg.includes('fetch failed') || msg.includes('ENOTFOUND')) {
+        setErrorMsg('Falha na conexão com o Supabase (Failed to fetch). O endereço do projeto está inacessível ou incorreto. Ajuste suas chaves abaixo ou use o Modo Local.');
+        setShowConfig(true);
+      } else {
+        setErrorMsg(msg || 'Erro ao realizar autenticação.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSaveConfig = (e) => {
+    e.preventDefault();
+    if (customUrl && customKey) {
+      localStorage.setItem('CUSTOM_SUPABASE_URL', customUrl.trim());
+      localStorage.setItem('CUSTOM_SUPABASE_ANON_KEY', customKey.trim());
+      setConfigSavedMsg('Chaves salvas com sucesso! Recarregando conexão...');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1200);
+    }
+  };
+
   return (
     <div className="auth-container">
-      <div className="auth-header">
-        <div className="app-logo-icon" style={{ width: '48px', height: '48px', margin: '0 auto' }}>
-          <ShieldCheck size={28} />
+      <div className="auth-wrapper">
+        <div className="auth-header">
+          <div className="app-logo-icon auth-logo">
+            <ShieldCheck size={32} />
+          </div>
+          <h1>Semáforo Financeiro</h1>
+          <p>Acesse sua conta em nuvem ou utilize o modo local para controlar seus limites de gastos.</p>
         </div>
-        <h1>Semáforo Financeiro</h1>
-        <p>Acesse sua conta segura em nuvem para acompanhar seus limites diários e frear gastos excedentes.</p>
-      </div>
 
-      {!isSupabaseConfigured() && (
-        <div className="traffic-message red" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <AlertCircle size={20} />
-          <div>
-            <strong>Atenção: Supabase Não Configurado!</strong>
-            <div style={{ fontSize: '0.75rem', marginTop: '0.2rem' }}>
-              Para usar com Supabase, adicione as chaves no <code>.env.local</code> ou no script de tabelas.
+        {errorMsg && (
+          <div className="traffic-message red">
+            <AlertCircle size={20} style={{ flexShrink: 0 }} />
+            <div>
+              <strong>Atenção:</strong>
+              <div style={{ marginTop: '0.25rem', lineHeight: '1.4' }}>{errorMsg}</div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {errorMsg && (
-        <div className="traffic-message red">
-          {errorMsg}
-        </div>
-      )}
+        {infoMsg && (
+          <div className="traffic-message green">
+            <Check size={20} style={{ flexShrink: 0 }} />
+            <div>{infoMsg}</div>
+          </div>
+        )}
 
-      {infoMsg && (
-        <div className="traffic-message green">
-          {infoMsg}
-        </div>
-      )}
+        <form onSubmit={handleAuth} className="glass-card auth-card">
+          <h2>{isLogin ? 'Entrar no Sistema' : 'Criar Nova Conta'}</h2>
 
-      <form onSubmit={handleAuth} className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 600, fontFamily: 'var(--font-heading)' }}>
-          {isLogin ? 'Entrar no Sistema' : 'Criar Nova Conta'}
-        </h2>
+          <div className="form-group">
+            <label>E-mail</label>
+            <input
+              type="email"
+              className="input-glass"
+              placeholder="seu@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
 
-        <div>
-          <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.35rem' }}>E-mail</label>
-          <input
-            type="email"
-            className="input-glass"
-            placeholder="seu@email.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </div>
+          <div className="form-group">
+            <label>Senha</label>
+            <input
+              type="password"
+              className="input-glass"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+            />
+          </div>
 
-        <div>
-          <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.35rem' }}>Senha</label>
-          <input
-            type="password"
-            className="input-glass"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={6}
-          />
-        </div>
+          <button type="submit" className="btn btn-primary auth-submit-btn" disabled={loading}>
+            {loading ? (
+              'Conectando...'
+            ) : isLogin ? (
+              <>
+                <LogIn size={18} /> Entrar
+              </>
+            ) : (
+              <>
+                <UserPlus size={18} /> Cadastrar
+              </>
+            )}
+          </button>
 
-        <button type="submit" className="btn-primary" disabled={loading} style={{ marginTop: '0.5rem' }}>
-          {loading ? (
-            'Processando...'
-          ) : isLogin ? (
-            <>
-              <LogIn size={18} /> Entrar
-            </>
-          ) : (
-            <>
-              <UserPlus size={18} /> Cadastrar
-            </>
+          <div className="auth-card-footer">
+            <button
+              type="button"
+              className="auth-switch-btn"
+              onClick={() => { setIsLogin(!isLogin); setErrorMsg(''); setInfoMsg(''); }}
+            >
+              {isLogin ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
+            </button>
+          </div>
+        </form>
+
+        <div className="auth-options-container">
+          {onUseLocalMode && (
+            <button
+              type="button"
+              className="btn btn-secondary auth-local-btn"
+              onClick={onUseLocalMode}
+            >
+              <HardDrive size={18} /> Continuar sem Login (Modo Local)
+            </button>
           )}
-        </button>
 
-        <div style={{ textAlign: 'center', marginTop: '0.5rem' }}>
           <button
             type="button"
-            onClick={() => { setIsLogin(!isLogin); setErrorMsg(''); setInfoMsg(''); }}
-            style={{ background: 'none', border: 'none', color: 'var(--color-indigo)', fontSize: '0.85rem', cursor: 'pointer' }}
+            className="auth-config-toggle-btn"
+            onClick={() => setShowConfig(!showConfig)}
           >
-            {isLogin ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
+            <Settings size={16} /> {showConfig ? 'Ocultar Configuração do Supabase' : 'Configurar Chaves do Supabase'}
           </button>
+
+          {showConfig && (
+            <form onSubmit={handleSaveConfig} className="glass-card auth-config-card">
+              <h3>
+                <Key size={16} /> Chaves de Conexão Supabase
+              </h3>
+              <p className="auth-config-help">
+                Insira a URL e a Anon Key do seu projeto no Supabase para sincronização em nuvem.
+              </p>
+
+              {configSavedMsg && (
+                <div className="traffic-message green" style={{ fontSize: '0.8rem', padding: '0.5rem' }}>
+                  {configSavedMsg}
+                </div>
+              )}
+
+              <div className="form-group">
+                <label>URL do Projeto Supabase</label>
+                <input
+                  type="text"
+                  className="input-glass"
+                  placeholder="https://xyz.supabase.co"
+                  value={customUrl}
+                  onChange={(e) => setCustomUrl(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Anon Key (Chave Pública)</label>
+                <input
+                  type="text"
+                  className="input-glass"
+                  placeholder="eyJhbGciOi..."
+                  value={customKey}
+                  onChange={(e) => setCustomKey(e.target.value)}
+                  required
+                />
+              </div>
+
+              <button type="submit" className="btn btn-outline" style={{ width: '100%', marginTop: '0.5rem' }}>
+                <Check size={16} /> Salvar e Reconectar
+              </button>
+            </form>
+          )}
         </div>
-      </form>
+      </div>
     </div>
   );
 }
+

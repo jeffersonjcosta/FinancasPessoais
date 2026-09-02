@@ -16,6 +16,16 @@ import {
   X
 } from 'lucide-react';
 import FileImporter from './FileImporter';
+import {
+  MONTHS_LIST,
+  formatCurrency,
+  formatDateBR,
+  isCardPurchase,
+  isInvoicePayment,
+  getInvoiceMonth,
+  getInvoicePeriod,
+  getDueDate
+} from '../utils/finance';
 
 export default function CreditCardsManager({
   creditCards = [],
@@ -27,6 +37,7 @@ export default function CreditCardsManager({
   onAddCard,
   onDeleteCard,
   onAddExpense,
+  onUpdateExpense,
   onDeleteExpense
 }) {
   // New Card Form State
@@ -50,20 +61,6 @@ export default function CreditCardsManager({
   // File Importer Modal
   const [showImportModal, setShowImportModal] = useState(false);
 
-  const MONTHS_LIST = [
-    { code: '2026-01', name: 'Janeiro 2026' },
-    { code: '2026-02', name: 'Fevereiro 2026' },
-    { code: '2026-03', name: 'Março 2026' },
-    { code: '2026-04', name: 'Abril 2026' },
-    { code: '2026-05', name: 'Maio 2026' },
-    { code: '2026-06', name: 'Junho 2026' },
-    { code: '2026-07', name: 'Julho 2026' },
-    { code: '2026-08', name: 'Agosto 2026' },
-    { code: '2026-09', name: 'Setembro 2026' },
-    { code: '2026-10', name: 'Outubro 2026' },
-    { code: '2026-11', name: 'Novembro 2026' },
-    { code: '2026-12', name: 'Dezembro 2026' },
-  ];
 
   const handleAddCard = async (e) => {
     e.preventDefault();
@@ -123,51 +120,57 @@ export default function CreditCardsManager({
     setShowInstallmentForm(false);
   };
 
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
-  };
+  // Compras do cartão que caem na fatura do mês selecionado (pelo dia de fechamento)
+  const getInvoicePurchases = (card) => expenses.filter(e =>
+    isCardPurchase(e) && e.card_id === card.id && getInvoiceMonth(e.date, card.closing_day) === selectedMonth
+  );
+  const sumAmounts = (list) => list.reduce((sum, e) => sum + (e.actual_amount || e.predicted_amount || 0), 0);
+  const getCardInvoiceAmount = (card) => sumAmounts(getInvoicePurchases(card));
 
-  // Helper to check if an expense matches a credit card
-  const isExpenseForCard = (exp, card) => {
-    if (!exp.date || !exp.date.startsWith(selectedMonth)) return false;
-    
-    // Explicit card_id match
-    if (exp.card_id && exp.card_id === card.id) return true;
+  // Linha de pagamento da fatura (despesa de caixa) lançada para este cartão no mês
+  const getInvoiceLine = (card) => expenses.find(e =>
+    isInvoicePayment(e) && e.card_id === card.id && e.date && e.date.startsWith(selectedMonth)
+  );
 
-    // Payment method match or description match
-    const isCredit = exp.payment_method === 'Cartão de Crédito' || (exp.category_id && exp.category_id.includes('cartao'));
-    const descLower = (exp.description || '').toLowerCase();
-    const cardNameLower = (card.name || '').toLowerCase();
+  const currentCard = creditCards.find(c => c.id === activeCardId) || creditCards[0] || null;
 
-    if (cardNameLower.includes('credicard') && (descLower.includes('credicard') || exp.category_id === 'cat-credicard')) return true;
-    if (cardNameLower.includes('bradesco') && (descLower.includes('bradesco') || exp.category_id === 'cat-bradesco')) return true;
-
-    return isCredit && (!exp.card_id || exp.card_id === card.id);
-  };
-
-  // Calculate current invoice total per card
-  const getCardInvoiceAmount = (card) => {
-    return expenses
-      .filter(e => isExpenseForCard(e, card))
-      .reduce((sum, e) => sum + (e.actual_amount || e.predicted_amount || 0), 0);
-  };
-
-  // Get active card object
-  const currentCard = creditCards.find(c => c.id === activeCardId) || creditCards[0] || {
-    id: 'card-credicard',
-    name: 'Cartão Credicard',
-    limit_amount: 1700,
-    closing_day: 15,
-    due_day: 24,
-    color: '#3b82f6'
-  };
-
-  // Filter invoice items for active card in selectedMonth
-  const activeInvoiceExpenses = expenses.filter(e => isExpenseForCard(e, currentCard));
-  const activeInvoiceTotal = activeInvoiceExpenses.reduce((sum, e) => sum + (e.actual_amount || e.predicted_amount || 0), 0);
-  const activeLimit = currentCard.limit_amount || 0;
+  const activeInvoiceExpenses = currentCard
+    ? getInvoicePurchases(currentCard).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+    : [];
+  const activeInvoiceTotal = sumAmounts(activeInvoiceExpenses);
+  const activeLimit = currentCard?.limit_amount || 0;
   const activeAvailable = activeLimit - activeInvoiceTotal;
   const activeUsedPct = activeLimit > 0 ? (activeInvoiceTotal / activeLimit) * 100 : 0;
+  const activeInvoiceLine = currentCard ? getInvoiceLine(currentCard) : null;
+  const activePeriod = currentCard ? getInvoicePeriod(selectedMonth, currentCard.closing_day) : null;
+  const activeDueDate = currentCard ? getDueDate(selectedMonth, currentCard.due_day) : '';
+  const invoiceNeedsUpdate = Boolean(
+    activeInvoiceLine && activeInvoiceLine.status !== 'ok' &&
+    Math.abs((activeInvoiceLine.predicted_amount || 0) - activeInvoiceTotal) > 0.01
+  );
+
+  // Cria (ou atualiza a previsão de) a linha de pagamento da fatura no fluxo de caixa
+  const handleRegisterInvoicePayment = () => {
+    if (!currentCard) return;
+    const total = parseFloat(activeInvoiceTotal.toFixed(2));
+    if (activeInvoiceLine) {
+      if (onUpdateExpense) onUpdateExpense(activeInvoiceLine.id, { predicted_amount: total });
+      return;
+    }
+    onAddExpense({
+      date: activeDueDate,
+      description: `Fatura ${currentCard.name}`,
+      category_id: 'cat-cartoes',
+      predicted_amount: total,
+      actual_amount: 0,
+      payment_method: 'PIX',
+      card_id: currentCard.id,
+      is_invoice_payment: true,
+      account_id: accounts[0]?.id || 'acc-jeff',
+      status: 'pendente',
+      notes: `Pagamento da fatura com vencimento em ${formatDateBR(activeDueDate)}`
+    });
+  };
 
   // Batch import callback
   const handleBatchImport = (importedList) => {
@@ -281,7 +284,9 @@ export default function CreditCardsManager({
               <FileText size={20} style={{ color: currentCard?.color || '#3b82f6' }} />
               Fatura Detalhada: {currentCard?.name} ({selectedMonth})
             </h2>
-            <p>Lista de despesas e compras parceladas lançadas nesta fatura</p>
+            <p>
+              Compras de {activePeriod?.startBR} a {activePeriod?.endBR} (fecha dia {currentCard?.closing_day}) • Vencimento {formatDateBR(activeDueDate)}
+            </p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -313,6 +318,38 @@ export default function CreditCardsManager({
           <div>
             <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Uso do Limite</span>
             <strong style={{ fontSize: '1.25rem', color: activeUsedPct >= 100 ? '#f87171' : activeUsedPct >= 80 ? '#fbbf24' : '#34d399' }}>{activeUsedPct.toFixed(0)}%</strong>
+          </div>
+          <div>
+            <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Pagamento da Fatura (caixa)</span>
+            {activeInvoiceLine ? (
+              <>
+                <strong style={{ fontSize: '1.1rem', color: activeInvoiceLine.status === 'ok' ? '#34d399' : '#fbbf24', display: 'block' }}>
+                  {activeInvoiceLine.status === 'ok'
+                    ? `Pago ${formatCurrency(activeInvoiceLine.actual_amount)}`
+                    : `Previsto ${formatCurrency(activeInvoiceLine.predicted_amount)}`}
+                </strong>
+                {invoiceNeedsUpdate && (
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    style={{ marginTop: '0.4rem', padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
+                    onClick={handleRegisterInvoicePayment}
+                  >
+                    Atualizar previsão para {formatCurrency(activeInvoiceTotal)}
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ marginTop: '0.25rem', padding: '0.3rem 0.7rem', fontSize: '0.8rem' }}
+                onClick={handleRegisterInvoicePayment}
+                disabled={activeInvoiceTotal <= 0}
+              >
+                Lançar pagamento ({formatCurrency(activeInvoiceTotal)})
+              </button>
+            )}
           </div>
         </div>
 

@@ -33,50 +33,33 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [selectedMonth, setSelectedMonth] = useState('2026-05');
+  const [selectedMonth, setSelectedMonth] = useState('2026-09');
 
-  const MIGRATION_VERSION = 'v2_macro_categories';
+  const MIGRATION_VERSION = 'v5_september_2026';
 
-  // Accounts state
-  const [accounts, setAccounts] = useState(() => {
-    const saved = localStorage.getItem('FIN_ACCOUNTS');
-    return saved ? JSON.parse(saved) : INITIAL_ACCOUNTS;
-  });
+  // Quando a versão do seed muda (nova planilha / novos dados iniciais), tudo é recarregado do seed.
+  const [needsMigration] = useState(() => localStorage.getItem('FIN_DATA_VERSION') !== MIGRATION_VERSION);
 
-  // Categories & Expenses state with auto-migration
-  const [categories, setCategories] = useState(() => {
-    const dataVersion = localStorage.getItem('FIN_DATA_VERSION');
-    const saved = localStorage.getItem('FIN_CATEGORIES');
-    if (dataVersion !== MIGRATION_VERSION || !saved) {
-      return INITIAL_CATEGORIES;
+  const loadState = (key, fallback) => {
+    if (needsMigration) return fallback;
+    const saved = localStorage.getItem(key);
+    if (!saved) return fallback;
+    try {
+      return JSON.parse(saved);
+    } catch {
+      return fallback;
     }
-    return JSON.parse(saved);
-  });
+  };
 
-  // Incomes state
-  const [incomes, setIncomes] = useState(() => {
-    const saved = localStorage.getItem('FIN_INCOMES');
-    return saved ? JSON.parse(saved) : INITIAL_INCOMES;
-  });
+  const [accounts, setAccounts] = useState(() => loadState('FIN_ACCOUNTS', INITIAL_ACCOUNTS));
+  const [categories, setCategories] = useState(() => loadState('FIN_CATEGORIES', INITIAL_CATEGORIES));
+  const [incomes, setIncomes] = useState(() => loadState('FIN_INCOMES', INITIAL_INCOMES));
+  const [expenses, setExpenses] = useState(() => loadState('FIN_EXPENSES', INITIAL_EXPENSES));
+  const [creditCards, setCreditCards] = useState(() => loadState('FIN_CREDIT_CARDS', INITIAL_CREDIT_CARDS));
 
-  // Expenses state
-  const [expenses, setExpenses] = useState(() => {
-    const dataVersion = localStorage.getItem('FIN_DATA_VERSION');
-    const saved = localStorage.getItem('FIN_EXPENSES');
-    if (dataVersion !== MIGRATION_VERSION || !saved) {
-      localStorage.setItem('FIN_DATA_VERSION', MIGRATION_VERSION);
-      localStorage.setItem('FIN_CATEGORIES', JSON.stringify(INITIAL_CATEGORIES));
-      localStorage.setItem('FIN_EXPENSES', JSON.stringify(INITIAL_EXPENSES));
-      return INITIAL_EXPENSES;
-    }
-    return JSON.parse(saved);
-  });
-
-  // Credit Cards state
-  const [creditCards, setCreditCards] = useState(() => {
-    const saved = localStorage.getItem('FIN_CREDIT_CARDS');
-    return saved ? JSON.parse(saved) : INITIAL_CREDIT_CARDS;
-  });
+  useEffect(() => {
+    localStorage.setItem('FIN_DATA_VERSION', MIGRATION_VERSION);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('FIN_CREDIT_CARDS', JSON.stringify(creditCards));
@@ -85,6 +68,10 @@ export default function App() {
   const handleAddCard = (newCard) => {
     const item = { ...newCard, id: 'card-' + Date.now() };
     setCreditCards(prev => [...prev, item]);
+  };
+
+  const handleUpdateCard = (cardId, updatedFields) => {
+    setCreditCards(prev => prev.map(c => c.id === cardId ? { ...c, ...updatedFields } : c));
   };
 
   const handleDeleteCard = (cardId) => {
@@ -189,6 +176,8 @@ export default function App() {
       setCategories(INITIAL_CATEGORIES);
       setIncomes(INITIAL_INCOMES);
       setExpenses(INITIAL_EXPENSES);
+      setCreditCards(INITIAL_CREDIT_CARDS);
+      localStorage.removeItem('FIN_CREDIT_CARDS');
       localStorage.removeItem('FIN_ACCOUNTS');
       localStorage.removeItem('FIN_CATEGORIES');
       localStorage.removeItem('FIN_INCOMES');
@@ -214,8 +203,13 @@ export default function App() {
     );
   }
 
-  if (isSupabaseConfigured() && !user) {
-    return <Auth onLoginSuccess={(u) => setUser(u)} />;
+  if (!user) {
+    return (
+      <Auth
+        onLoginSuccess={(u) => setUser(u)}
+        onUseLocalMode={() => setUser({ email: 'Usuário Local (Offline)', isLocal: true })}
+      />
+    );
   }
 
   const navMenuItems = [
@@ -338,7 +332,9 @@ export default function App() {
               onAddCard={handleAddCard}
               onDeleteCard={handleDeleteCard}
               onAddExpense={handleAddExpense}
+              onUpdateExpense={handleUpdateExpense}
               onDeleteExpense={handleDeleteExpense}
+              onUpdateCard={handleUpdateCard}
             />
           )}
 
