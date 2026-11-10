@@ -1,26 +1,15 @@
 import React from 'react';
-import { LayoutDashboard, TrendingUp, TrendingDown, Landmark, Tag, CreditCard, UploadCloud } from 'lucide-react';
 
-export default function Navbar({ activeTab, setActiveTab }) {
-  const navItems = [
-    { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
-    { id: 'receitas', label: 'Receitas', icon: TrendingUp },
-    { id: 'despesas', label: 'Despesas', icon: TrendingDown },
-    { id: 'cartoes', label: 'Cartões', icon: CreditCard },
-    { id: 'contas', label: 'Contas', icon: Landmark },
-    { id: 'categorias', label: 'Categorias', icon: Tag },
-    { id: 'importar', label: 'Importar', icon: UploadCloud },
-  ];
-
+// Barra inferior do celular: mesmos itens da lateral, com rolagem horizontal.
+export default function Navbar({ items = [], activeTab, setActiveTab }) {
   return (
     <nav className="mobile-bottom-nav">
-      {navItems.map(item => {
+      {items.map(item => {
         const Icon = item.icon;
-        const isActive = activeTab === item.id;
         return (
           <button
             key={item.id}
-            className={`mobile-nav-item ${isActive ? 'active' : ''}`}
+            className={`mobile-nav-item ${activeTab === item.id ? 'active' : ''}`}
             onClick={() => setActiveTab(item.id)}
           >
             <Icon size={20} />

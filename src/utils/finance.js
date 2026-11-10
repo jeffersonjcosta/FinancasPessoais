@@ -7,23 +7,30 @@
 //   'cat-cartoes'. Representa as compras do cartão no fluxo de caixa, evitando dupla contagem.
 // - Fluxo de caixa do mês = todas as despesas do mês, exceto compras no cartão.
 
-export const MONTHS_LIST = [
-  { code: '2026-01', name: 'Janeiro 2026' },
-  { code: '2026-02', name: 'Fevereiro 2026' },
-  { code: '2026-03', name: 'Março 2026' },
-  { code: '2026-04', name: 'Abril 2026' },
-  { code: '2026-05', name: 'Maio 2026' },
-  { code: '2026-06', name: 'Junho 2026' },
-  { code: '2026-07', name: 'Julho 2026' },
-  { code: '2026-08', name: 'Agosto 2026' },
-  { code: '2026-09', name: 'Setembro 2026' },
-  { code: '2026-10', name: 'Outubro 2026' },
-  { code: '2026-11', name: 'Novembro 2026' },
-  { code: '2026-12', name: 'Dezembro 2026' },
-  { code: '2027-01', name: 'Janeiro 2027' },
-  { code: '2027-02', name: 'Fevereiro 2027' },
-  { code: '2027-03', name: 'Março 2027' },
-];
+const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto',
+  'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+export const currentMonth = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
+export const monthName = (code) => {
+  const [y, m] = code.split('-').map(Number);
+  return `${MONTH_NAMES[m - 1]} ${y}`;
+};
+
+// De janeiro/2026 até 12 meses à frente do mês atual (cobre parcelas futuras).
+export const MONTHS_LIST = (() => {
+  const list = [];
+  const [cy, cm] = currentMonth().split('-').map(Number);
+  const endIndex = cy * 12 + (cm - 1) + 12;
+  for (let i = 2026 * 12; i <= endIndex; i++) {
+    const code = `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`;
+    list.push({ code, name: monthName(code) });
+  }
+  return list;
+})();
 
 export const formatCurrency = (val) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);

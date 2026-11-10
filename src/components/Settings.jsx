@@ -1,146 +1,168 @@
-import React, { useState } from 'react';
-import { Download, Upload, LogOut, Key, Database, Check } from 'lucide-react';
-import { supabase, isSupabaseConfigured } from '../supabaseClient';
+import React, { useRef, useState } from 'react';
+import {
+  Cloud, CloudOff, RefreshCw, Download, Upload, History, Eraser, RotateCcw, Copy, Check, AlertTriangle
+} from 'lucide-react';
+import { downloadBackup, parseBackupFile, listSnapshots } from '../utils/storage';
+import SYNC_SQL from '../../supabase_user_data.sql?raw';
 
-export default function Settings({ user, onLogout, transactions, profile, recurring, onImportData }) {
-  const [supabaseUrl, setSupabaseUrl] = useState(localStorage.getItem('CUSTOM_SUPABASE_URL') || '');
-  const [supabaseKey, setSupabaseKey] = useState(localStorage.getItem('CUSTOM_SUPABASE_ANON_KEY') || '');
-  const [keysSaved, setKeysSaved] = useState(false);
+const fmtDateTime = (ms) => new Date(ms).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 
-  const handleSaveKeys = (e) => {
-    e.preventDefault();
-    if (supabaseUrl && supabaseKey) {
-      localStorage.setItem('CUSTOM_SUPABASE_URL', supabaseUrl.trim());
-      localStorage.setItem('CUSTOM_SUPABASE_ANON_KEY', supabaseKey.trim());
-      setKeysSaved(true);
-      setTimeout(() => {
-        setKeysSaved(false);
-        window.location.reload();
-      }, 1500);
+export default function Settings({
+  data, user, syncStatus, syncLabel, lastSync, onSyncNow, onReplaceAll, onResetToSeed
+}) {
+  const fileRef = useRef(null);
+  const [msg, setMsg] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [snapshots, setSnapshots] = useState(listSnapshots);
+  const isLocal = !user || user.isLocal;
+
+  const flash = (type, text) => setMsg({ type, text });
+  const refreshSnaps = () => setTimeout(() => setSnapshots(listSnapshots()), 50);
+
+  const handleRestoreFile = async (file) => {
+    if (!file) return;
+    try {
+      const state = await parseBackupFile(file);
+      const n = state.incomes.length + state.expenses.length;
+      if (!window.confirm(`Restaurar o backup "${file.name}" (${n} lançamentos)? Os dados atuais serão substituídos — uma cópia deles fica guardada abaixo.`)) return;
+      onReplaceAll(state, 'antes de restaurar backup');
+      flash('ok', `Backup restaurado: ${n} lançamentos.`);
+      refreshSnaps();
+    } catch (err) {
+      flash('error', err.message || 'Arquivo inválido.');
+    } finally {
+      if (fileRef.current) fileRef.current.value = '';
     }
   };
 
-  const handleExportJSON = () => {
-    const exportData = {
-      version: '1.0',
-      exportedAt: new Date().toISOString(),
-      userEmail: user?.email,
-      profile,
-      recurring,
-      transactions,
-    };
-
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `backup_financas_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
+  const handleRestoreSnapshot = (snap) => {
+    if (!window.confirm(`Voltar para a cópia de ${fmtDateTime(snap.at)} (${snap.reason})?`)) return;
+    onReplaceAll(snap.state, 'antes de voltar uma cópia automática');
+    flash('ok', 'Cópia restaurada.');
+    refreshSnaps();
   };
 
-  const handleImportJSON = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const handleStartFresh = () => {
+    if (!window.confirm('Apagar TODAS as receitas e despesas e começar do zero? Contas, cartões e categorias continuam. Uma cópia do que existe hoje fica guardada.')) return;
+    onReplaceAll({ ...data, incomes: [], expenses: [] }, 'antes de começar do zero');
+    flash('ok', 'Pronto: lançamentos zerados. Contas, cartões e categorias mantidos.');
+    refreshSnaps();
+  };
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const parsed = JSON.parse(event.target.result);
-        if (parsed.transactions || parsed.profile) {
-          await onImportData(parsed);
-          alert('Dados importados com sucesso!');
-        } else {
-          alert('Formato de arquivo JSON inválido.');
-        }
-      } catch (err) {
-        alert('Erro ao ler arquivo de backup.');
-      }
-    };
-    reader.readAsText(file);
+  const handleSeed = () => {
+    if (!window.confirm('Voltar aos dados de exemplo da planilha FINANCEIRO 2026? Os dados atuais serão substituídos (fica uma cópia).')) return;
+    onResetToSeed();
+    flash('ok', 'Dados da planilha restaurados.');
+    refreshSnaps();
+  };
+
+  const copySql = async () => {
+    try {
+      await navigator.clipboard.writeText(SYNC_SQL);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      flash('error', 'Não consegui copiar. Selecione o texto e copie manualmente.');
+    }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      {/* Account Info */}
-      <div className="glass-card">
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.85rem' }}>Sua Conta</h2>
-        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          Conectado como: <strong style={{ color: 'var(--text-primary)' }}>{user?.email || 'Usuário'}</strong>
-        </div>
-
-        <button
-          type="button"
-          onClick={onLogout}
-          className="btn-primary"
-          style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', boxShadow: 'none' }}
-        >
-          <LogOut size={18} /> Sair da Conta
-        </button>
-      </div>
-
-      {/* Backup & Restore */}
-      <div className="glass-card">
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <Database size={18} /> Backup & Restauração Local
-        </h2>
-        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: '1.4' }}>
-          Baixe uma cópia dos seus lançamentos em formato JSON para guardar em segurança no seu computador.
-        </p>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-          <button type="button" onClick={handleExportJSON} className="btn-primary">
-            <Download size={18} /> Exportar Backup (JSON)
-          </button>
-
-          <label className="btn-primary" style={{ background: 'rgba(255, 255, 255, 0.06)', border: '1px solid var(--card-border)', boxShadow: 'none', cursor: 'pointer' }}>
-            <Upload size={18} /> Importar Backup (JSON)
-            <input type="file" accept=".json" onChange={handleImportJSON} style={{ display: 'none' }} />
-          </label>
+    <div className="manager-container settings-page">
+      <div className="section-header">
+        <div>
+          <h2>Backup e sincronização</h2>
+          <p className="text-secondary">
+            {data.incomes.length} receitas • {data.expenses.length} despesas • {data.accounts.length} contas • {data.creditCards.length} cartões
+          </p>
         </div>
       </div>
 
-      {/* Dynamic Supabase Config */}
-      <div className="glass-card">
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <Key size={18} /> Configuração do Supabase
-        </h2>
-        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          Se não usou o arquivo <code>.env.local</code>, insira a URL e a Anon Key do seu projeto Supabase aqui:
-        </p>
+      {msg && (
+        <div className={`notice notice-${msg.type}`}>
+          {msg.type === 'ok' ? <Check size={16} /> : <AlertTriangle size={16} />} {msg.text}
+        </div>
+      )}
 
-        {keysSaved && (
-          <div className="traffic-message green" style={{ marginBottom: '0.85rem' }}>
-            Chaves salvas! Recarregando...
-          </div>
+      {/* Nuvem */}
+      <div className="glass-card settings-block">
+        <h3>{syncStatus === 'ok' ? <Cloud size={18} /> : <CloudOff size={18} />} Nuvem (celular e computador juntos)</h3>
+        {isLocal ? (
+          <p className="text-secondary">
+            Você entrou no modo offline: os dados ficam só neste navegador. Saia e entre com seu e-mail
+            para sincronizar entre aparelhos.
+          </p>
+        ) : (
+          <>
+            <p>
+              Status: <strong>{syncLabel}</strong>
+              {lastSync && <span className="text-secondary"> — última vez às {new Date(lastSync).toLocaleTimeString('pt-BR')}</span>}
+            </p>
+            {syncStatus === 'no-table' && (
+              <div className="settings-sql">
+                <p>
+                  Falta um passo, feito uma vez só: abra o <strong>Supabase → SQL Editor</strong> do projeto,
+                  cole o comando abaixo e clique em <strong>Run</strong>. Depois toque em "Sincronizar agora".
+                </p>
+                <pre>{SYNC_SQL}</pre>
+                <button className="btn btn-secondary" onClick={copySql}>
+                  {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? 'Copiado' : 'Copiar comando'}
+                </button>
+              </div>
+            )}
+            <button className="btn btn-primary" onClick={onSyncNow} disabled={syncStatus === 'syncing'}>
+              <RefreshCw size={15} className={syncStatus === 'syncing' ? 'spin' : ''} /> Sincronizar agora
+            </button>
+          </>
         )}
+      </div>
 
-        <form onSubmit={handleSaveKeys} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-          <div>
-            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Project URL</label>
-            <input
-              type="text"
-              className="input-glass"
-              placeholder="https://xyz.supabase.co"
-              value={supabaseUrl}
-              onChange={(e) => setSupabaseUrl(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Anon Key</label>
-            <input
-              type="text"
-              className="input-glass"
-              placeholder="eyJhbGciOi..."
-              value={supabaseKey}
-              onChange={(e) => setSupabaseKey(e.target.value)}
-            />
-          </div>
-
-          <button type="submit" className="btn-primary" style={{ marginTop: '0.35rem' }}>
-            <Check size={18} /> Salvar Chaves do Supabase
+      {/* Arquivo */}
+      <div className="glass-card settings-block">
+        <h3><Download size={18} /> Backup em arquivo</h3>
+        <p className="text-secondary">Baixe um arquivo com tudo (guarde no Drive). Serve também para levar os dados a outro aparelho.</p>
+        <div className="settings-actions">
+          <button className="btn btn-primary" onClick={() => downloadBackup(data)}>
+            <Download size={15} /> Baixar backup
           </button>
-        </form>
+          <button className="btn btn-secondary" onClick={() => fileRef.current?.click()}>
+            <Upload size={15} /> Restaurar de um arquivo
+          </button>
+          <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => handleRestoreFile(e.target.files?.[0])} />
+        </div>
+      </div>
+
+      {/* Cópias automáticas */}
+      <div className="glass-card settings-block">
+        <h3><History size={18} /> Cópias automáticas</h3>
+        <p className="text-secondary">O app guarda uma cópia antes de cada importação, restauração ou troca pela versão da nuvem.</p>
+        {snapshots.length === 0 ? (
+          <p className="text-secondary">Nenhuma cópia ainda.</p>
+        ) : (
+          <ul className="snapshot-list">
+            {snapshots.map(s => (
+              <li key={s.at}>
+                <span>
+                  <strong>{fmtDateTime(s.at)}</strong> — {s.reason}
+                  <span className="text-secondary"> ({s.counts.incomes} receitas, {s.counts.expenses} despesas)</span>
+                </span>
+                <button className="btn btn-outline btn-sm" onClick={() => handleRestoreSnapshot(s)}>Voltar para esta</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Zerar */}
+      <div className="glass-card settings-block settings-danger">
+        <h3><Eraser size={18} /> Recomeçar</h3>
+        <div className="settings-actions">
+          <button className="btn btn-secondary" onClick={handleStartFresh}>
+            <Eraser size={15} /> Começar do zero (mantém contas, cartões e categorias)
+          </button>
+          <button className="btn btn-outline" onClick={handleSeed}>
+            <RotateCcw size={15} /> Voltar aos dados da planilha
+          </button>
+        </div>
       </div>
     </div>
   );

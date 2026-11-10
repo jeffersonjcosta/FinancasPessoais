@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import Auth from './components/Auth';
 import Navbar from './components/Navbar';
@@ -9,13 +9,10 @@ import AccountsManager from './components/AccountsManager';
 import CategoryManager from './components/CategoryManager';
 import CreditCardsManager from './components/CreditCardsManager';
 import ImportStatement from './components/ImportStatement';
-import {
-  INITIAL_ACCOUNTS,
-  INITIAL_CREDIT_CARDS,
-  INITIAL_CATEGORIES,
-  INITIAL_INCOMES,
-  INITIAL_EXPENSES
-} from './data/initialData';
+import Settings from './components/Settings';
+import { loadLocalState, saveLocalState, takeSnapshot, seedState } from './utils/storage';
+import { fetchRemote, pushRemote, isMissingTable } from './utils/cloudSync';
+import { currentMonth } from './utils/finance';
 import {
   ShieldCheck,
   Calendar,
@@ -27,75 +24,127 @@ import {
   CreditCard,
   UploadCloud,
   LogOut,
-  RotateCcw
+  DatabaseBackup,
+  Cloud,
+  CloudOff,
+  RefreshCw
 } from 'lucide-react';
 import './App.css';
+
+export const NAV_ITEMS = [
+  { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
+  { id: 'importar', label: 'Importar', icon: UploadCloud },
+  { id: 'despesas', label: 'Despesas', icon: TrendingDown },
+  { id: 'receitas', label: 'Receitas', icon: TrendingUp },
+  { id: 'cartoes', label: 'Cartões', icon: CreditCard },
+  { id: 'contas', label: 'Contas', icon: Landmark },
+  { id: 'categorias', label: 'Categorias', icon: Tag },
+  { id: 'dados', label: 'Backup', icon: DatabaseBackup },
+];
+
+const SYNC_LABEL = {
+  off: 'Só neste aparelho',
+  syncing: 'Sincronizando…',
+  pending: 'Salvando na nuvem…',
+  ok: 'Salvo na nuvem',
+  error: 'Sem conexão — salvo no aparelho',
+  'no-table': 'Nuvem não ativada',
+};
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [selectedMonth, setSelectedMonth] = useState('2026-09');
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
 
-  const MIGRATION_VERSION = 'v5_september_2026';
+  // ------------------------------------------------------------ dados
+  const [data, setData] = useState(loadLocalState);
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const { accounts, categories, incomes, expenses, creditCards } = data;
 
-  // Quando a versão do seed muda (nova planilha / novos dados iniciais), tudo é recarregado do seed.
-  const [needsMigration] = useState(() => localStorage.getItem('FIN_DATA_VERSION') !== MIGRATION_VERSION);
+  useEffect(() => { saveLocalState(data); }, [data]);
 
-  const loadState = (key, fallback) => {
-    if (needsMigration) return fallback;
-    const saved = localStorage.getItem(key);
-    if (!saved) return fallback;
+  const mutate = (field) => (updater) => setData(prev => ({
+    ...prev,
+    [field]: typeof updater === 'function' ? updater(prev[field]) : updater,
+    updated_at: Date.now(),
+  }));
+  const setAccounts = mutate('accounts');
+  const setCategories = mutate('categories');
+  const setIncomes = mutate('incomes');
+  const setExpenses = mutate('expenses');
+  const setCreditCards = mutate('creditCards');
+
+  // Troca todos os dados de uma vez (backup, nuvem, seed), sempre guardando cópia do que havia.
+  const replaceAll = (next, reason) => {
+    takeSnapshot(dataRef.current, reason);
+    setData({ ...next, updated_at: Date.now() });
+  };
+
+  // ------------------------------------------------------------ nuvem
+  const [syncStatus, setSyncStatus] = useState('off');
+  const [lastSync, setLastSync] = useState(null);
+  const remoteReady = useRef(false);
+  const lastPushed = useRef(null);
+  const userId = user && !user.isLocal ? user.id : null;
+
+  const syncNow = useCallback(async () => {
+    if (!userId) return;
+    setSyncStatus('syncing');
     try {
-      return JSON.parse(saved);
-    } catch {
-      return fallback;
+      const remote = await fetchRemote(userId);
+      const local = dataRef.current;
+      const localAt = local.updated_at || 0;
+      if (remote && remote.updated_at > localAt) {
+        takeSnapshot(local, 'antes de baixar da nuvem');
+        lastPushed.current = remote.updated_at;
+        setData(remote);
+      } else if (!remote || localAt > remote.updated_at) {
+        const toPush = localAt ? local : { ...local, updated_at: Date.now() };
+        await pushRemote(userId, toPush);
+        lastPushed.current = toPush.updated_at;
+        if (!localAt) setData(toPush);
+      } else {
+        lastPushed.current = localAt;
+      }
+      remoteReady.current = true;
+      setSyncStatus('ok');
+      setLastSync(Date.now());
+    } catch (err) {
+      console.error('[Financas] sync', err);
+      setSyncStatus(isMissingTable(err) ? 'no-table' : 'error');
     }
-  };
+  }, [userId]);
 
-  const [accounts, setAccounts] = useState(() => loadState('FIN_ACCOUNTS', INITIAL_ACCOUNTS));
-  const [categories, setCategories] = useState(() => loadState('FIN_CATEGORIES', INITIAL_CATEGORIES));
-  const [incomes, setIncomes] = useState(() => loadState('FIN_INCOMES', INITIAL_INCOMES));
-  const [expenses, setExpenses] = useState(() => loadState('FIN_EXPENSES', INITIAL_EXPENSES));
-  const [creditCards, setCreditCards] = useState(() => loadState('FIN_CREDIT_CARDS', INITIAL_CREDIT_CARDS));
-
+  // Ao entrar e sempre que o app volta para a frente (troca de aparelho).
   useEffect(() => {
-    localStorage.setItem('FIN_DATA_VERSION', MIGRATION_VERSION);
-  }, []);
+    if (!userId) { remoteReady.current = false; setSyncStatus('off'); return; }
+    syncNow();
+    const onVisible = () => { if (document.visibilityState === 'visible') syncNow(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [userId, syncNow]);
 
+  // Cada alteração sobe para a nuvem 1,5 s depois da última edição.
   useEffect(() => {
-    localStorage.setItem('FIN_CREDIT_CARDS', JSON.stringify(creditCards));
-  }, [creditCards]);
+    if (!userId || !remoteReady.current) return;
+    if ((data.updated_at || 0) === lastPushed.current) return;
+    setSyncStatus('pending');
+    const t = setTimeout(async () => {
+      try {
+        await pushRemote(userId, data);
+        lastPushed.current = data.updated_at;
+        setSyncStatus('ok');
+        setLastSync(Date.now());
+      } catch (err) {
+        setSyncStatus(isMissingTable(err) ? 'no-table' : 'error');
+      }
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [data, userId]);
 
-  const handleAddCard = (newCard) => {
-    const item = { ...newCard, id: 'card-' + Date.now() };
-    setCreditCards(prev => [...prev, item]);
-  };
-
-  const handleUpdateCard = (cardId, updatedFields) => {
-    setCreditCards(prev => prev.map(c => c.id === cardId ? { ...c, ...updatedFields } : c));
-  };
-
-  const handleDeleteCard = (cardId) => {
-    setCreditCards(prev => prev.filter(c => c.id !== cardId));
-  };
-  useEffect(() => {
-    localStorage.setItem('FIN_ACCOUNTS', JSON.stringify(accounts));
-  }, [accounts]);
-
-  useEffect(() => {
-    localStorage.setItem('FIN_CATEGORIES', JSON.stringify(categories));
-  }, [categories]);
-
-  useEffect(() => {
-    localStorage.setItem('FIN_INCOMES', JSON.stringify(incomes));
-  }, [incomes]);
-
-  useEffect(() => {
-    localStorage.setItem('FIN_EXPENSES', JSON.stringify(expenses));
-  }, [expenses]);
-
-  // Auth State
+  // ------------------------------------------------------------ auth
   useEffect(() => {
     if (!isSupabaseConfigured()) {
       setLoadingAuth(false);
@@ -105,7 +154,7 @@ export default function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setLoadingAuth(false);
-    });
+    }).catch(() => setLoadingAuth(false));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
@@ -115,98 +164,45 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Handlers for Incomes
-  const handleAddIncome = (newInc) => {
-    const item = { ...newInc, id: 'inc-' + Date.now() };
-    setIncomes(prev => [item, ...prev]);
-  };
+  // ------------------------------------------------------------ handlers
+  const newId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-  const handleUpdateIncome = (id, updatedFields) => {
-    setIncomes(prev => prev.map(i => i.id === id ? { ...i, ...updatedFields } : i));
-  };
+  const handleAddCard = (newCard) => setCreditCards(prev => [...prev, { ...newCard, id: newId('card') }]);
+  const handleUpdateCard = (cardId, fields) => setCreditCards(prev => prev.map(c => c.id === cardId ? { ...c, ...fields } : c));
+  const handleDeleteCard = (cardId) => setCreditCards(prev => prev.filter(c => c.id !== cardId));
 
-  const handleDeleteIncome = (id) => {
-    setIncomes(prev => prev.filter(i => i.id !== id));
-  };
+  const handleAddIncome = (newInc) => setIncomes(prev => [{ ...newInc, id: newId('inc') }, ...prev]);
+  const handleUpdateIncome = (id, fields) => setIncomes(prev => prev.map(i => i.id === id ? { ...i, ...fields } : i));
+  const handleDeleteIncome = (id) => setIncomes(prev => prev.filter(i => i.id !== id));
 
-  // Handlers for Expenses
-  const handleAddExpense = (newExp) => {
-    const item = { ...newExp, id: 'exp-' + Date.now() };
-    setExpenses(prev => [item, ...prev]);
-  };
+  const handleAddExpense = (newExp) => setExpenses(prev => [{ ...newExp, id: newId('exp') }, ...prev]);
+  const handleUpdateExpense = (id, fields) => setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...fields } : e));
+  const handleDeleteExpense = (id) => setExpenses(prev => prev.filter(e => e.id !== id));
 
-  // Importacao de extrato: uma unica atualizacao de estado por tipo, com ids unicos.
+  // Importação: uma única atualização por tipo, com ids únicos.
   const handleImportBatch = (entries) => {
+    takeSnapshot(dataRef.current, 'antes de importar extrato');
     const stamp = Date.now();
     const newIncomes = [];
     const newExpenses = [];
     entries.forEach((entry, idx) => {
-      if (entry.kind === 'receita') {
-        newIncomes.push({ ...entry.data, id: `inc-imp-${stamp}-${idx}` });
-      } else {
-        newExpenses.push({ ...entry.data, id: `exp-imp-${stamp}-${idx}` });
-      }
+      if (entry.kind === 'receita') newIncomes.push({ ...entry.data, id: `inc-imp-${stamp}-${idx}` });
+      else newExpenses.push({ ...entry.data, id: `exp-imp-${stamp}-${idx}` });
     });
     if (newIncomes.length) setIncomes(prev => [...newIncomes, ...prev]);
     if (newExpenses.length) setExpenses(prev => [...newExpenses, ...prev]);
   };
 
-  const handleUpdateExpense = (id, updatedFields) => {
-    setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...updatedFields } : e));
-  };
+  const handleAddAccount = (newAcc) => setAccounts(prev => [...prev, { ...newAcc, id: newId('acc') }]);
+  const handleUpdateAccount = (id, fields) => setAccounts(prev => prev.map(a => a.id === id ? { ...a, ...fields } : a));
+  const handleDeleteAccount = (id) => setAccounts(prev => prev.filter(a => a.id !== id));
 
-  const handleDeleteExpense = (id) => {
-    setExpenses(prev => prev.filter(e => e.id !== id));
-  };
-
-  // Handlers for Accounts
-  const handleAddAccount = (newAcc) => {
-    const item = { ...newAcc, id: 'acc-' + Date.now() };
-    setAccounts(prev => [...prev, item]);
-  };
-
-  const handleUpdateAccount = (id, updatedFields) => {
-    setAccounts(prev => prev.map(a => a.id === id ? { ...a, ...updatedFields } : a));
-  };
-
-  const handleDeleteAccount = (id) => {
-    setAccounts(prev => prev.filter(a => a.id !== id));
-  };
-
-  // Handlers for Categories
-  const handleAddCategory = (newCat) => {
-    const item = { ...newCat, id: 'cat-' + Date.now() };
-    setCategories(prev => [...prev, item]);
-  };
-
-  const handleUpdateCategory = (id, updatedFields) => {
-    setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updatedFields } : c));
-  };
-
-  const handleDeleteCategory = (id) => {
-    setCategories(prev => prev.filter(c => c.id !== id));
-  };
-
-  // Reset to initial spreadsheet data
-  const handleResetData = () => {
-    if (window.confirm('Deseja restaurar os dados originais da planilha FINANCEIRO 2026? Suas alterações locais serão sobrescritas.')) {
-      setAccounts(INITIAL_ACCOUNTS);
-      setCategories(INITIAL_CATEGORIES);
-      setIncomes(INITIAL_INCOMES);
-      setExpenses(INITIAL_EXPENSES);
-      setCreditCards(INITIAL_CREDIT_CARDS);
-      localStorage.removeItem('FIN_CREDIT_CARDS');
-      localStorage.removeItem('FIN_ACCOUNTS');
-      localStorage.removeItem('FIN_CATEGORIES');
-      localStorage.removeItem('FIN_INCOMES');
-      localStorage.removeItem('FIN_EXPENSES');
-    }
-  };
+  const handleAddCategory = (newCat) => setCategories(prev => [...prev, { ...newCat, id: newId('cat') }]);
+  const handleUpdateCategory = (id, fields) => setCategories(prev => prev.map(c => c.id === id ? { ...c, ...fields } : c));
+  const handleDeleteCategory = (id) => setCategories(prev => prev.filter(c => c.id !== id));
 
   const handleLogout = async () => {
-    if (isSupabaseConfigured()) {
-      await supabase.auth.signOut();
-    }
+    if (isSupabaseConfigured()) await supabase.auth.signOut();
     setUser(null);
   };
 
@@ -230,15 +226,17 @@ export default function App() {
     );
   }
 
-  const navMenuItems = [
-    { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
-    { id: 'receitas', label: 'Receitas', icon: TrendingUp },
-    { id: 'despesas', label: 'Despesas', icon: TrendingDown },
-    { id: 'cartoes', label: 'Cartões', icon: CreditCard },
-    { id: 'contas', label: 'Contas', icon: Landmark },
-    { id: 'categorias', label: 'Categorias', icon: Tag },
-    { id: 'importar', label: 'Importar Extrato', icon: UploadCloud },
-  ];
+  const SyncIcon = syncStatus === 'ok' ? Cloud : syncStatus === 'syncing' || syncStatus === 'pending' ? RefreshCw : CloudOff;
+  const syncPill = (
+    <button
+      className={`sync-pill sync-${syncStatus}`}
+      onClick={() => (syncStatus === 'no-table' || syncStatus === 'off' ? setActiveTab('dados') : syncNow())}
+      title={lastSync ? `Última sincronização: ${new Date(lastSync).toLocaleTimeString('pt-BR')}` : 'Clique para sincronizar'}
+    >
+      <SyncIcon size={14} className={syncStatus === 'syncing' ? 'spin' : ''} />
+      <span>{SYNC_LABEL[syncStatus]}</span>
+    </button>
+  );
 
   return (
     <div className="app-container">
@@ -250,19 +248,18 @@ export default function App() {
               <ShieldCheck size={24} />
             </div>
             <div className="sidebar-brand">
-              <span className="app-title">Financeiro 2026</span>
+              <span className="app-title">Finanças</span>
               <span className="app-subtitle">Gestão Pessoal Simples</span>
             </div>
           </div>
 
           <nav className="sidebar-nav">
-            {navMenuItems.map(item => {
+            {NAV_ITEMS.map(item => {
               const Icon = item.icon;
-              const isActive = activeTab === item.id;
               return (
                 <button
                   key={item.id}
-                  className={`sidebar-item ${isActive ? 'active' : ''}`}
+                  className={`sidebar-item ${activeTab === item.id ? 'active' : ''}`}
                   onClick={() => setActiveTab(item.id)}
                 >
                   <Icon size={18} />
@@ -274,17 +271,11 @@ export default function App() {
         </div>
 
         <div className="sidebar-footer">
-          <button className="sidebar-item btn-reset" onClick={handleResetData} title="Restaurar dados da Planilha">
-            <RotateCcw size={16} />
-            <span>Restaurar Planilha</span>
+          {syncPill}
+          <button className="sidebar-item btn-logout" onClick={handleLogout}>
+            <LogOut size={16} />
+            <span>Sair</span>
           </button>
-
-          {user && (
-            <button className="sidebar-item btn-logout" onClick={handleLogout}>
-              <LogOut size={16} />
-              <span>Sair</span>
-            </button>
-          )}
         </div>
       </aside>
 
@@ -293,12 +284,20 @@ export default function App() {
         <header className="app-header">
           <div className="header-title-area">
             <h1>Controle Financeiro Familiar</h1>
-            <p>Planilha Integrada • Contas, Receitas, Despesas & Limites</p>
+            <p>Contas, Receitas, Despesas & Cartões</p>
           </div>
 
-          <div className="header-month-badge">
-            <Calendar size={15} />
-            <span>Mês selecionado: <strong>{selectedMonth}</strong></span>
+          <div className="header-actions">
+            <div className="mobile-only">{syncPill}</div>
+            <label className="header-month-badge">
+              <Calendar size={15} />
+              <input
+                type="month"
+                className="month-input"
+                value={selectedMonth}
+                onChange={(e) => e.target.value && setSelectedMonth(e.target.value)}
+              />
+            </label>
           </div>
         </header>
 
@@ -389,12 +388,26 @@ export default function App() {
               expenses={expenses}
               selectedMonth={selectedMonth}
               onImport={handleImportBatch}
+              onNavigate={(tab) => setActiveTab(tab)}
+            />
+          )}
+
+          {activeTab === 'dados' && (
+            <Settings
+              data={data}
+              user={user}
+              syncStatus={syncStatus}
+              syncLabel={SYNC_LABEL[syncStatus]}
+              lastSync={lastSync}
+              onSyncNow={syncNow}
+              onReplaceAll={replaceAll}
+              onResetToSeed={() => replaceAll(seedState(), 'antes de restaurar a planilha')}
             />
           )}
         </main>
       </div>
 
-      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Navbar items={NAV_ITEMS} activeTab={activeTab} setActiveTab={setActiveTab} />
     </div>
   );
 }

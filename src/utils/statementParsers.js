@@ -57,8 +57,45 @@ export const CATEGORY_HINTS = [
   ['cat-cartoes', /fatura|cartao de credito|cartão de crédito|gasto c credito|gasto c crédito|pagamento cartao|pagamento cartão/i],
 ];
 
-export const guessCategory = (description, categories) => {
+// Descrição "normalizada" para reconhecer o mesmo estabelecimento entre meses:
+// sem acento, sem números/datas/parcelas e sem prefixos de banco.
+const BANK_NOISE = /\b(pix|ted|doc|transf(erencia)?|enviado|enviada|recebido|recebida|compra|cartao|deb(ito)?|credito|elo|visa|master(card)?|pagto|pagamento|pag|ref|nr|no|des|rem|qr|code|ao|de|da|do|em|para)\b/g;
+export const normalizeDesc = (desc) => String(desc || '')
+  .toLowerCase()
+  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/\d+/g, ' ')
+  .replace(/[^a-z ]/g, ' ')
+  .replace(BANK_NOISE, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const shortKey = (norm) => norm.split(' ').filter(w => w.length > 2).slice(0, 2).join(' ');
+
+// Aprende com o que já foi lançado: descrição -> categoria mais recente.
+export const buildCategoryMemory = (expenses = []) => {
+  const exact = new Map();
+  const short = new Map();
+  const sorted = [...expenses].filter(e => e.category_id && e.description).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  for (const e of sorted) {
+    const norm = normalizeDesc(e.description);
+    const orig = e.notes && /original: (.+)$/.exec(e.notes);
+    const keys = [norm, orig ? normalizeDesc(orig[1]) : ''].filter(Boolean);
+    for (const k of keys) {
+      exact.set(k, e.category_id);
+      const sk = shortKey(k);
+      if (sk) short.set(sk, e.category_id);
+    }
+  }
+  return { exact, short };
+};
+
+export const guessCategory = (description, categories, memory) => {
   const ids = new Set(categories.map(c => c.id));
+  if (memory) {
+    const norm = normalizeDesc(description);
+    const hit = memory.exact.get(norm) || memory.short.get(shortKey(norm));
+    if (hit && ids.has(hit)) return hit;
+  }
   for (const [id, re] of CATEGORY_HINTS) {
     if (ids.has(id) && re.test(description)) return id;
   }
@@ -133,6 +170,7 @@ export const parseGrid = (grid, fallbackMonth) => {
     let description = '';
     let amount = 0;
     let isCredit = false;
+    let signed;
 
     if (cols) {
       date = toISODate(cells[cols.date], fallbackMonth);
@@ -151,11 +189,12 @@ export const parseGrid = (grid, fallbackMonth) => {
       const last = valueCells[valueCells.length - 1];
       amount = Math.abs(toNumber(last));
       isCredit = !/^-/.test(String(last || ''));
+      signed = toNumber(last);
       description = cleanDescription(cells.filter(c => c !== dateCell && c !== last).join(' '));
     }
 
     if (!date || !amount) continue;
-    rows.push({ date, description: description || 'Lançamento importado', amount, isCredit });
+    rows.push({ date, description: description || 'Lançamento importado', amount, isCredit, ...(signed !== undefined ? { signed } : {}) });
   }
   return rows;
 };
@@ -200,11 +239,41 @@ export const parsePdfText = (text, fallbackMonth) => {
       description: description || 'Compra importada',
       amount: Math.abs(amount),
       isCredit: amount < 0, // estorno na fatura
+      signed: amount,
       cardFinal: currentCard,
       installment,
     });
   }
   return rows;
+};
+
+// Texto colado do app/site do banco: tenta "dd/mm descrição valor" por linha; senão, tabela com TAB/;.
+// Sinal do valor em texto sem colunas: na fatura, negativo = estorno; no extrato, negativo = saída
+// (e, se não houver nenhum negativo, tudo é tratado como saída — o usuário ajusta na revisão).
+export const applySignRule = (rows, mode) => {
+  if (mode === 'cartao' || !rows.some(r => r.signed !== undefined)) return rows;
+  const anyNegative = rows.some(r => r.signed < 0);
+  return rows.map(r => (r.signed === undefined ? r : { ...r, isCredit: anyNegative ? r.signed > 0 : false }));
+};
+
+export const parsePastedText = (text, fallbackMonth) => {
+  if (/<STMTTRN>/i.test(text)) return parseOfx(text, fallbackMonth);
+  // Junta linhas quebradas no formato "data\ndescrição\nvalor" comum ao copiar do celular.
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const merged = [];
+  for (let i = 0; i < lines.length; i++) {
+    const isDateOnly = /^\d{1,2}[\/.-]\d{1,2}([\/.-]\d{2,4})?$/.test(lines[i]);
+    if (isDateOnly && i + 2 < lines.length && /-?R?\$?\s*[\d.]*\d,\d{2}$/.test(lines[i + 2])) {
+      merged.push(`${lines[i]} ${lines[i + 1]} ${lines[i + 2]}`);
+      i += 2;
+    } else {
+      merged.push(lines[i]);
+    }
+  }
+  const asLines = parsePdfText(merged.map(l => l.replace(/R\$\s*/g, '')).join('\n'), fallbackMonth);
+  if (asLines.length) return asLines;
+  const grid = lines.map(l => l.split(/\t|;/).map(c => c.trim()));
+  return parseGrid(grid, fallbackMonth);
 };
 
 export const parseOfx = (text, fallbackMonth) => {
