@@ -1299,3 +1299,56 @@ body {
   line-height: 1.4;
 }
 
+/* ---------------------------------------------------------------- Importar Extrato */
+.import-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: center;
+  padding: 3rem 1.5rem;
+  border-style: dashed;
+}
+
+.import-dropzone h3 { margin: 0; font-size: 1.05rem; }
+.import-dropzone p { margin: 0; max-width: 34rem; font-size: 0.85rem; }
+
+.spin { animation: import-spin 1s linear infinite; }
+@keyframes import-spin { to { transform: rotate(360deg); } }
+
+.import-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  align-items: flex-end;
+  margin: 1rem 0;
+}
+
+.import-options .form-group { margin: 0; min-width: 14rem; flex: 1; }
+.import-toggle { display: flex; gap: 0.5rem; }
+
+.import-table td { vertical-align: top; }
+.import-table .input-compact {
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.82rem;
+}
+
+.import-table .row-excluded { opacity: 0.45; }
+.import-original { font-size: 0.7rem; margin-top: 0.2rem; }
+
+.import-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 720px) {
+  .import-table { font-size: 0.75rem; }
+  .import-footer { justify-content: stretch; }
+  .import-footer .btn { width: 100%; }
+}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, TrendingUp, TrendingDown, Landmark, Tag, CreditCard } from 'lucide-react';
+import { LayoutDashboard, TrendingUp, TrendingDown, Landmark, Tag, CreditCard, UploadCloud } from 'lucide-react';
 
 export default function Navbar({ activeTab, setActiveTab }) {
   const navItems = [
@@ -9,6 +9,7 @@ export default function Navbar({ activeTab, setActiveTab }) {
     { id: 'cartoes', label: 'Cartões', icon: CreditCard },
     { id: 'contas', label: 'Contas', icon: Landmark },
     { id: 'categorias', label: 'Categorias', icon: Tag },
+    { id: 'importar', label: 'Importar', icon: UploadCloud },
   ];
 
   return (

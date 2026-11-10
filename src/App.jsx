@@ -8,6 +8,7 @@ import ExpensesManager from './components/ExpensesManager';
 import AccountsManager from './components/AccountsManager';
 import CategoryManager from './components/CategoryManager';
 import CreditCardsManager from './components/CreditCardsManager';
+import ImportStatement from './components/ImportStatement';
 import {
   INITIAL_ACCOUNTS,
   INITIAL_CREDIT_CARDS,
@@ -24,6 +25,7 @@ import {
   Landmark,
   Tag,
   CreditCard,
+  UploadCloud,
   LogOut,
   RotateCcw
 } from 'lucide-react';
@@ -133,6 +135,22 @@ export default function App() {
     setExpenses(prev => [item, ...prev]);
   };
 
+  // Importacao de extrato: uma unica atualizacao de estado por tipo, com ids unicos.
+  const handleImportBatch = (entries) => {
+    const stamp = Date.now();
+    const newIncomes = [];
+    const newExpenses = [];
+    entries.forEach((entry, idx) => {
+      if (entry.kind === 'receita') {
+        newIncomes.push({ ...entry.data, id: `inc-imp-${stamp}-${idx}` });
+      } else {
+        newExpenses.push({ ...entry.data, id: `exp-imp-${stamp}-${idx}` });
+      }
+    });
+    if (newIncomes.length) setIncomes(prev => [...newIncomes, ...prev]);
+    if (newExpenses.length) setExpenses(prev => [...newExpenses, ...prev]);
+  };
+
   const handleUpdateExpense = (id, updatedFields) => {
     setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...updatedFields } : e));
   };
@@ -219,6 +237,7 @@ export default function App() {
     { id: 'cartoes', label: 'Cartões', icon: CreditCard },
     { id: 'contas', label: 'Contas', icon: Landmark },
     { id: 'categorias', label: 'Categorias', icon: Tag },
+    { id: 'importar', label: 'Importar Extrato', icon: UploadCloud },
   ];
 
   return (
@@ -358,6 +377,18 @@ export default function App() {
               onAddCategory={handleAddCategory}
               onUpdateCategory={handleUpdateCategory}
               onDeleteCategory={handleDeleteCategory}
+            />
+          )}
+
+          {activeTab === 'importar' && (
+            <ImportStatement
+              categories={categories}
+              accounts={accounts}
+              creditCards={creditCards}
+              incomes={incomes}
+              expenses={expenses}
+              selectedMonth={selectedMonth}
+              onImport={handleImportBatch}
             />
           )}
         </main>
